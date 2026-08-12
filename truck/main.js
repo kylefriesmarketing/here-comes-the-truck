@@ -23,7 +23,7 @@ function freshSave() {
     days: 0, bestDay: 0,
     regulars: {}, towns: { hazelpark: 1 }, endings: {}, parlor: false,
     cash: D.ECON.startCash, rep: 0, noteMisses: 0, tickets: 0,
-    annoy: {}, prices: {}, owned: {}, saidMid: {},
+    annoy: {}, prices: {}, owned: {}, saidMid: {}, invented: [], discovered: {},
     settings: { muted: false },
   };
 }
@@ -97,6 +97,7 @@ function newDay() {
     cash: save.cash, rep: save.rep, noteMisses: save.noteMisses,
     tickets: save.tickets, annoy: save.annoy, prices: save.prices,
     owned: save.owned, met: save.regulars, saidMid: save.saidMid,
+    invented: save.invented, discovered: save.discovered,
     cb: {
       cameOut: () => { },
       served: (p, note) => { if (note === 'right' || note === 'mercy') sfx.coin(); else sfx.nope(); },
@@ -109,6 +110,9 @@ function newDay() {
       bought: (u) => { sfx.ding(); ui.hint(`${u.name}. ${u.sub}.`, 6000); },
       park: () => sfx.hatch(),
       window: (on) => { sfx.slide(); camMode = on ? 'window' : 'cab'; },
+      churnStart: (r) => { sfx.hatch(); ui.hint('churning ' + D.flavourName(r) + '. this is costing you the afternoon.', 5000); },
+      churnDone: (f) => { sfx.ding(); ui.hint(`${D.CHURN.batch} of "${f.label}" in the box. go and sell them.`, 7000); },
+      legendary: (l) => { sfx.coin(); ui.hint(`— ${l.name} —  you found one of cy's.`, 9000); },
       mirror: () => sfx.waveAt(),
       song: (on) => { on ? sfx.songOn() : sfx.songOff(); },
       dayEnd: (s) => endDay(s),
@@ -133,6 +137,9 @@ function endDay(s) {
   save.owned = { ...G.owned };
   save.regulars = { ...G.met };          // the room COUNTS these
   save.saidMid = { ...G.saidMid };
+  // the recipes you worked out are yours for good; the batch in the box is not
+  save.invented = G.invented.map(f => ({ ...f }));
+  save.discovered = { ...G.discovered };
   persist();
   ui.dayEnd(s, G);
 }
@@ -156,6 +163,11 @@ addEventListener('keydown', (e) => {
     const r = G.act('window', !G.windowOpen);
     if (!r.ok) ui.hint('park first. you cannot serve out of a moving truck.');
   }
+  if (e.code === 'KeyB') {
+    if (!G.truck.parked) ui.hint('park first — the bay is in the back.');
+    else if (G.windowOpen) ui.hint('shut the window. you cannot serve and churn at once.');
+    else { camMode = camMode === 'bay' ? 'cab' : 'bay'; ui.bay(camMode === 'bay'); }
+  }
   if (e.code === 'Tab') { e.preventDefault(); ui.clipboard(); }
   if (e.code === 'KeyM') { save.settings.muted = !save.settings.muted; sfx.muted(save.settings.muted); persist(); }
   if (e.code === 'Enter' && G.serving) {
@@ -163,8 +175,12 @@ addEventListener('keydown', (e) => {
     if (p.stage === 'pay') G.act('change', D.changeDue(p.tender, p.price));
     else if (p.stage === 'short') G.act('mercy');
   }
-  const n = e.code.match(/^Digit([1-5])$/);
-  if (n && G.serving && G.serving.stage === 'ask') G.act('serve', D.MENU[+n[1] - 1].key);
+  // ⚠️ off G.menu(), not D.MENU — the number keys have to reach what you invented too
+  const n = e.code.match(/^Digit([1-9])$/);
+  if (n && G.serving && G.serving.stage === 'ask') {
+    const it = G.menu()[+n[1] - 1];
+    if (it) G.act('serve', it.key);
+  }
 });
 addEventListener('keyup', (e) => {
   if (KEYMAP[e.code]) keys[KEYMAP[e.code]] = 0;
@@ -177,49 +193,66 @@ addEventListener('blur', () => { for (const k in keys) keys[k] = 0; if (G && !G.
 // ⚠️ CONVENTION: the truck's forward is (sin yaw, cos yaw) = local +Z, so the camera's
 // yaw is the truck's yaw + PI, and the truck's RIGHT (where the window is) is local -X.
 // ---------------------------------------------------------------------------
-function placeCamera(dt) {
-  const t = G.truck;
-  const target = camMode === 'window' ? 1 : 0;
-  camBlend += (target - camBlend) * Math.min(1, dt * 4.5);
+// ⚠️ THREE POSITIONS, one easing rig. This used to be a two-way blend between the cab and
+// the window driven by a single 0..1 float; adding the churn bay as a third made that
+// unrepresentable. Compute the TARGET pose for whatever mode is current, then ease the
+// live pose toward it — adding a fourth position later costs one entry, not a rewrite.
+const camNow = { x: 0, y: 1.84, z: 0, yaw: 0, pitch: 0, fov: 72, set: false };
 
+function camTarget() {
+  const t = G.truck;
   const f = { x: Math.sin(t.yaw), z: Math.cos(t.yaw) };
   const r = { x: -Math.cos(t.yaw), z: Math.sin(t.yaw) };
 
-  // the cab: behind the windscreen, a little left of centre because that's where the seat is
-  // ⚠️ SIT BACK. At 1.15 m forward the driver's nose is against the windscreen and the
-  // A-pillars and header eat most of the frame. 0.55 puts the screen a normal arm's
-  // length away and the road opens up.
-  const cab = { x: t.x + f.x * 0.95 + r.x * -0.40, y: 1.84, z: t.z + f.z * 0.95 + r.z * -0.40 };
-  // The window: you step across and you are looking OUT at them. Kids at your window,
-  // from inside your truck, in four o'clock light — this shot is the game's whole poster.
-  // ⚠️ It must sit AT the opening, past the truck's own skin (half-width is 0.975). At
-  // 0.55 out the camera is still inside the bodywork and the poster shot is a black frame.
-  // INSIDE the frame, looking out through the opening — so your own sill and jambs edge
-  // the shot and it reads as your truck rather than a floating camera on the pavement.
-  const o = D.TRUCK.wide / 2 - 0.30;
-  const win = { x: t.x + r.x * o - f.x * 0.1, y: 1.62, z: t.z + r.z * o - f.z * 0.1 };
-
-  const b = camBlend * camBlend * (3 - 2 * camBlend);   // smoothstep
-  camera.position.set(cab.x + (win.x - cab.x) * b, cab.y + (win.y - cab.y) * b, cab.z + (win.z - cab.z) * b);
-
-  // Facing: forward from the cab, and at whoever is actually talking when you're at the
-  // window. ⚠️ A fixed "perpendicular to the truck" yaw is close but not right — the head
-  // of the queue stops anywhere within reachWindow of the mark, which at this range puts
-  // them ~20 degrees off frame centre and the poster shot has a person at its edge.
-  const yawCab = t.yaw + Math.PI;
-  const q0 = G.serving || G.queueSlot(0);         // look at whoever is actually talking
-  let yawWin = Math.atan2(-(q0.x - win.x), -(q0.z - win.z));
-  while (yawWin - yawCab > Math.PI) yawWin -= Math.PI * 2;     // take the short way round
-  while (yawWin - yawCab < -Math.PI) yawWin += Math.PI * 2;
-  camera.rotation.y = yawCab + (yawWin - yawCab) * b;
-  camera.rotation.x = -0.06 - b * 0.04;   // barely down — a grown-up's face is at your eye line
-
-  // a breath of FOV under throttle, so speed reads
-  const wantFov = 72 + Math.min(1, Math.abs(t.v) / D.TRUCK.topSpeed) * 6 - b * 8;
-  if (Math.abs(camera.fov - wantFov) > 0.05) {
-    camera.fov += (wantFov - camera.fov) * Math.min(1, dt * 3);
-    camera.updateProjectionMatrix();
+  if (camMode === 'window') {
+    // You step across and you are looking OUT at them. Kids at your window, from inside
+    // your truck, in four o'clock light — this shot is the game's whole poster.
+    // ⚠️ INSIDE the frame (half-width is 0.975), so your own sill and jambs edge the shot.
+    const o = D.TRUCK.wide / 2 - 0.30;
+    const p = { x: t.x + r.x * o - f.x * 0.1, y: 1.62, z: t.z + r.z * o - f.z * 0.1 };
+    // ⚠️ Look at whoever is actually TALKING. A fixed perpendicular yaw is close but not
+    // right — the head of the queue stops anywhere within reachWindow of the mark, which
+    // puts them ~20 degrees off centre and the poster shot has a person at its edge.
+    const q = G.serving || G.queueSlot(0);
+    return { ...p, yaw: Math.atan2(-(q.x - p.x), -(q.z - p.z)), pitch: -0.10, fov: 64 };
   }
+  if (camMode === 'bay') {
+    // Park, turn around, three steps. You are standing in the back facing the machine.
+    return {
+      x: t.x + f.x * 0.62, y: 1.58, z: t.z + f.z * 0.62,
+      yaw: t.yaw, pitch: -0.14, fov: 70,      // yaw = t.yaw looks along -forward
+    };
+  }
+  // the cab: behind the windscreen, a little left of centre because that's the seat.
+  // ⚠️ SIT BACK. At 1.15 m forward the driver's nose is against the glass and the
+  // A-pillars and header eat most of the frame.
+  return {
+    x: t.x + f.x * 0.95 + r.x * -0.40, y: 1.84, z: t.z + f.z * 0.95 + r.z * -0.40,
+    yaw: t.yaw + Math.PI, pitch: -0.06,
+    fov: 72 + Math.min(1, Math.abs(t.v) / G.topSpeed()) * 6,   // a breath of FOV for speed
+  };
+}
+
+function placeCamera(dt) {
+  const tg = camTarget();
+  if (!camNow.set) { Object.assign(camNow, tg); camNow.set = true; }
+  const k = Math.min(1, dt * 5.0);
+  camNow.x += (tg.x - camNow.x) * k;
+  camNow.y += (tg.y - camNow.y) * k;
+  camNow.z += (tg.z - camNow.z) * k;
+  camNow.pitch += (tg.pitch - camNow.pitch) * k;
+  camNow.fov += (tg.fov - camNow.fov) * Math.min(1, dt * 3);
+  // ⚠️ always ease the SHORT way round, or a mode change across the +/-PI seam spins the
+  // camera the long way through the whole world
+  let d = tg.yaw - camNow.yaw;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  camNow.yaw += d * k;
+
+  camera.position.set(camNow.x, camNow.y, camNow.z);
+  camera.rotation.y = camNow.yaw;
+  camera.rotation.x = camNow.pitch;
+  if (Math.abs(camera.fov - camNow.fov) > 0.05) { camera.fov = camNow.fov; camera.updateProjectionMatrix(); }
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +287,8 @@ function draw(dtWall) {
   if (G.over) pr = '';
   else if (G.truck.parked && !G.windowOpen) pr = 'Q — slide the window open';
   else if (G.truck.parked && G.windowOpen && !G.serving) pr = 'Q to close up · E to pull away';
+  else if (G.truck.parked && camMode === 'bay') pr = 'B — back to the cab';
+  else if (G.truck.parked) pr = 'Q — the window · B — the churn bay in the back';
   else if (!G.truck.parked && G.people.some(p => p.state === 'kerb')) pr = 'somebody is waiting — stop and E to park';
   ui.setPrompt(pr);
 
@@ -292,6 +327,11 @@ ui = new UI(() => G, {
     if (!r.ok) ui.hint(r.msg);
     else { save.owned = { ...G.owned }; persist(); }
     ui.drawClip();
+  },
+  churn: (recipe) => {
+    if (!G) return;
+    const r = G.act('churn', recipe);
+    if (!r.ok) ui.hint(r.msg);
   },
   nextDay: () => {
     document.getElementById('dayend').classList.add('hide');

@@ -408,6 +408,67 @@ export class View {
     this.hatch = box(0.09, 0.90, 1.94, cream);
     this.hatch.position.set(X - 0.05, 1.62, -0.1); g.add(this.hatch);
 
+    // ---- THE CHURN BAY, in the back. Park, turn around, three steps. ----
+    // ⚠️ The camera position for this existed before any of this geometry did, so turning
+    // round showed you the empty street BEHIND the truck (the body box is front-face
+    // culled). A camera pointed at nothing is not a location.
+    // Only a back wall and a floor — no side panels, because those are what boxed the cab
+    // in and turned the windscreen into a letterbox.
+    const bayBack = box(T.wide - 0.10, 1.95, 0.06, 0xd8d2c2);
+    bayBack.position.set(0, 1.30, -T.len / 2 + 0.05); g.add(bayBack);
+    const bayFloor = box(T.wide - 0.10, 0.05, T.len - 0.3, 0x6b6258);
+    bayFloor.position.set(0, 0.30, -0.2); g.add(bayFloor);
+    const bayCeil = box(T.wide - 0.10, 0.05, 2.9, 0xe6e0d0);
+    bayCeil.position.set(0, 2.28, -0.85); g.add(bayCeil);
+
+    // ⚠️ SIDE WALLS ONLY IN THE REAR SECTION (z < +0.5). Without them you stand in the
+    // bay looking at somebody's front garden straight through your own bodywork, because
+    // the body box is front-face culled — and the whole location falls apart. But walls
+    // that run the FULL length are what boxed the cab in and turned the windscreen into
+    // a letterbox, so they stop well behind the driver's seat.
+    const wallL = box(0.05, 1.95, 2.9, 0xd8d2c2);
+    wallL.position.set(T.wide / 2 - 0.05, 1.30, -0.85); g.add(wallL);
+    // the window side is walled only BEHIND the serving hatch, so the opening stays open
+    const wallR = box(0.05, 1.95, 1.15, 0xd8d2c2);
+    wallR.position.set(-(T.wide / 2 - 0.05), 1.30, -1.72); g.add(wallR);
+
+    // the counter, down the window side so you can hand things straight across
+    const counter = box(0.52, 0.08, 2.4, 0xb9bec2);
+    counter.position.set(-(T.wide / 2 - 0.32), 0.95, -0.7); g.add(counter);
+    const cFront = box(0.06, 0.62, 2.4, 0xe4ded0);
+    cFront.position.set(-(T.wide / 2 - 0.58), 0.63, -0.7); g.add(cFront);
+
+    // THE MACHINE — a churn barrel with a hopper, a spout and a lever you pull
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 0.86, 16),
+      lam({ color: 0xc9ced2 }));
+    barrel.position.set(-0.30, 1.42, -1.62); g.add(barrel);
+    const hopper = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.16, 0.34, 16),
+      lam({ color: 0xdfe4e7 }));
+    hopper.position.set(-0.30, 2.00, -1.62); g.add(hopper);
+    const spout = box(0.12, 0.20, 0.12, 0x9aa0a4);
+    spout.position.set(-0.30, 0.94, -1.36); g.add(spout);
+    this.churnLever = box(0.05, 0.30, 0.05, 0x8a3f34);
+    this.churnLever.position.set(-0.05, 1.30, -1.38); g.add(this.churnLever);
+    const motor = box(0.34, 0.26, 0.30, 0x7a8084);
+    motor.position.set(-0.30, 2.28, -1.62); g.add(motor);
+
+    // topping tubs on a shelf, in the mix-in colours
+    const shelf = box(0.30, 0.05, 1.5, 0xb5aa96);
+    shelf.position.set(T.wide / 2 - 0.22, 1.32, -1.25); g.add(shelf);
+    const tubCols = [0x6b4632, 0xd8a05a, 0xe86b86, 0xf0e07a, 0x8fd8c0, 0xf4f0e2];
+    tubCols.forEach((c, i) => {
+      const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.078, 0.13, 10), lam({ color: c }));
+      tub.position.set(T.wide / 2 - 0.22, 1.40, -1.88 + i * 0.25); g.add(tub);
+    });
+
+    // the freezer chest you actually sell out of, lids and all
+    const chest = box(0.62, 0.62, 1.7, 0xdfe4e7);
+    chest.position.set(T.wide / 2 - 0.36, 0.63, 0.55); g.add(chest);
+    for (const lz of [0.15, 0.95]) {
+      const lid = box(0.60, 0.06, 0.72, 0xb0c4cc);
+      lid.position.set(T.wide / 2 - 0.36, 0.97, lz); g.add(lid);
+    }
+
     // the cone on the roof, which is the whole reason anyone looks up
     const cone = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.8, 12), lam({ color: 0xf6d9a0 }));
     cone.position.set(0, 2.72, -0.6); cone.rotation.x = Math.PI; cone.castShadow = true; g.add(cone);
@@ -421,7 +482,9 @@ export class View {
     for (const z of [T.axleFront, T.axleRear]) for (const x of [-1, 1]) {
       const w = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.26, 14), lam({ color: 0x1b1b1e }));
       w.rotation.z = Math.PI / 2;
-      w.position.set(x * (T.wide / 2 - 0.06), 0.42, z);
+      // ⚠️ OUTBOARD of the bay floor (which spans +/-0.925), or the tyres poke up through
+      // the floor and you are standing in the back of the truck next to a wheel.
+      w.position.set(x * (T.wide / 2 + 0.03), 0.42, z);
       w.castShadow = true; g.add(w); this.wheels.push(w);
     }
 
@@ -519,6 +582,9 @@ export class View {
 
     const want = sim.windowOpen ? 2.56 : 1.62;
     this.hatch.position.y += (want - this.hatch.position.y) * Math.min(1, dt * 6);
+
+    // the machine is visibly going while it churns — the lever swings
+    if (this.churnLever) this.churnLever.rotation.x = sim.churning ? Math.sin(t * 7) * 0.55 : 0;
 
     const seen = new Set();
     for (const p of sim.people) {

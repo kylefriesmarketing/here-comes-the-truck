@@ -114,6 +114,40 @@ button{font-family:var(--ui-serif);cursor:pointer;border:0}
   font-size:.9rem;line-height:1.5;margin:.4rem 0 .6rem;padding-left:.6rem;
   border-left:2px solid rgba(192,57,43,.3);opacity:.85}
 
+/* ---------- the churn bay ---------- */
+#bay{position:fixed;inset:0;z-index:45;display:flex;align-items:center;justify-content:flex-end;
+  pointer-events:none;padding-right:2vw}
+#baysheet{pointer-events:auto;width:min(30rem,94vw);max-height:92vh;overflow:auto;
+  background:rgba(246,239,221,.96);padding:1.2rem 1.4rem;border-radius:3px;
+  box-shadow:0 14px 40px #000a;border-left:6px solid #7d8a6a}
+#baysheet h2{font-weight:400;font-size:1.4rem;margin-bottom:.1rem}
+#baysheet .sub{font-size:.78rem;opacity:.55;margin-bottom:.9rem}
+#baysheet h3{font-weight:400;font-size:.74rem;letter-spacing:.16em;text-transform:uppercase;
+  opacity:.5;margin:.9rem 0 .4rem}
+.chips{display:flex;flex-wrap:wrap;gap:.3rem}
+.chip{background:var(--paper2);padding:.28rem .6rem;border-radius:99px;font-size:.82rem;
+  box-shadow:0 1px 0 #0002}
+.chip:hover{background:#fff}
+.chip.on{background:var(--gold);box-shadow:0 1px 0 #0003 inset}
+#baysheet .fname{font-size:1.15rem;margin:.2rem 0 .7rem;line-height:1.3}
+#baysheet .fname em{font-style:italic;color:var(--pencil);font-size:.85rem}
+.brow{display:flex;align-items:center;gap:.5rem;margin-bottom:.34rem;font-size:.8rem}
+.brow b{font-weight:400;opacity:.6;width:3.4rem;letter-spacing:.03em}
+.brow i{display:block;height:8px;background:var(--cold);border-radius:2px;
+  min-width:2px;transition:width .15s}
+.brow span{opacity:.6;font-size:.74rem;white-space:nowrap;margin-left:auto}
+#baysheet .cost{font-size:.82rem;opacity:.8;margin:.7rem 0 .9rem;line-height:1.5}
+#baysheet table{width:100%;border-collapse:collapse;font-size:.84rem}
+#baysheet td{padding:.24rem 0;border-bottom:1px dotted #0002}
+#baysheet td.r{text-align:right;font-variant-numeric:tabular-nums}
+#baysheet .dim{opacity:.4;text-transform:none;letter-spacing:0}
+#baysheet .big small{display:block;font-size:.7rem;opacity:.6;margin-top:.15rem}
+.churning{font-size:.9rem;text-align:center;padding:.6rem 0}
+.cbar{height:9px;background:#0002;border-radius:2px;overflow:hidden;margin-top:.4rem}
+.cbar i{display:block;height:100%;background:var(--gold)}
+/* something you invented reads differently on the menu than the depot's lines */
+#menu button.mine{background:#efe3c2;box-shadow:0 2px 0 #0002,inset 0 0 0 1px var(--gold)}
+
 /* ---------- end of day ---------- */
 #dayend{position:fixed;inset:0;z-index:58;background:#0009;display:flex;
   align-items:center;justify-content:center}
@@ -162,6 +196,7 @@ button{font-family:var(--ui-serif);cursor:pointer;border:0}
 </div>
 
 <div id="clip" class="hide"><div id="clipsheet"></div></div>
+<div id="bay" class="hide"><div id="baysheet"></div></div>
 <div id="dayend" class="hide"><div id="endcard"></div></div>
 
 <div id="title">
@@ -171,7 +206,8 @@ button{font-family:var(--ui-serif);cursor:pointer;border:0}
   <button class="big" id="start">start the engine</button>
   <div class="keys">
     <b>W A S D</b> drive &nbsp;·&nbsp; <b>SPACE</b> hold for the song &nbsp;·&nbsp; <b>E</b> park / pull away<br>
-    <b>Q</b> the window &nbsp;·&nbsp; <b>1–5</b> serve &nbsp;·&nbsp; <b>TAB</b> the clipboard &nbsp;·&nbsp; <b>M</b> mute
+    <b>Q</b> the window &nbsp;·&nbsp; <b>1–9</b> serve &nbsp;·&nbsp; <b>B</b> the churn bay in the back<br>
+    <b>TAB</b> the clipboard &nbsp;·&nbsp; <b>ENTER</b> correct change &nbsp;·&nbsp; <b>M</b> mute
   </div>
   <div class="foot">a DIRTY BOY DEVS game</div>
 </div>

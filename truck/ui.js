@@ -37,12 +37,81 @@ export class UI {
       if (b.dataset.act) this.h.act(b.dataset.act);
     };
     $('clip').onclick = (e) => { if (e.target.id === 'clip') this.clipboard(false); };
+    $('baysheet').onclick = (e) => {
+      const b = e.target.closest('button.chip'); if (!b) return;
+      const { kind, key } = b.dataset;
+      if (kind === 'mixins') {
+        const i = this.recipe.mixins.indexOf(key);
+        if (i >= 0) this.recipe.mixins.splice(i, 1);
+        else if (this.recipe.mixins.length < D.CHURN.maxMixins) this.recipe.mixins.push(key);
+        else { this.recipe.mixins.shift(); this.recipe.mixins.push(key); }
+      } else this.recipe[kind] = key;
+      this.drawBay();
+    };
     $('clipsheet').onclick = (e) => {
       const b = e.target.closest('button');
       if (!b) return;
       if (b.dataset.pkey) this.h.price(b.dataset.pkey, parseInt(b.dataset.d, 10));
       if (b.dataset.buy) this.h.buy(b.dataset.buy);
     };
+  }
+
+  // ---- THE CHURN BAY -------------------------------------------------------
+  // ⚠️ Every bar here is drawn from D.recipeStats() — the SAME call the sale makes. The
+  // four bars you watch while churning cannot lie about what you are making.
+  bay(on) {
+    this.bayOpen = on === undefined ? !this.bayOpen : on;
+    show($('bay'), this.bayOpen);
+    if (this.bayOpen) { this.recipe = this.recipe || { base: 'custard', mixins: [], finish: 'none' }; this.drawBay(); }
+  }
+
+  drawBay() {
+    const g = this.g();
+    if (!this.bayOpen) return;
+    const r = this.recipe;
+    const s = D.recipeStats(r);
+    const price = D.suggestedPrice(s);
+    const bar = (label, v, max, note) =>
+      `<div class="brow"><b>${label}</b><i style="width:${Math.min(100, v / max * 100).toFixed(0)}%"></i>
+       <span>${note}</span></div>`;
+
+    const pick = (arr, sel, kind) => arr.map(x => {
+      const on = kind === 'mixins' ? r.mixins.includes(x.key) : sel === x.key;
+      return `<button class="chip ${on ? 'on' : ''}" data-kind="${kind}" data-key="${x.key}">${x.label}</button>`;
+    }).join('');
+
+    const churning = g.churning;
+    $('baysheet').innerHTML = `
+      <h2>the churn bay</h2>
+      <div class="sub">three steps from the seat. it smells like a school kitchen back here.</div>
+
+      <h3>base</h3><div class="chips">${pick(D.BASES, r.base, 'base')}</div>
+      <h3>mix-ins <span class="dim">(up to ${D.CHURN.maxMixins})</span></h3>
+      <div class="chips">${pick(D.MIXINS, null, 'mixins')}</div>
+      <h3>finish</h3><div class="chips">${pick(D.FINISHES, r.finish, 'finish')}</div>
+
+      <h3>what you'd be making</h3>
+      <div class="fname">${D.flavourName(r)}${s.legend ? ' <em>— one of cy\'s</em>' : ''}</div>
+      ${bar('sweet', s.sweet, 1.2, s.sweet > 0.85 ? 'the kids will lose their minds' : s.sweet > 0.5 ? 'sweet enough' : 'grown-up sweet')}
+      ${bar('novel', s.novel, 1.2, s.novel > 0.85 ? "nobody's had this" : s.novel > 0.5 ? 'worth a second look' : 'familiar')}
+      ${bar('holds', s.melt, 1.0, s.melt > 0.7 ? 'survives a warm box' : s.melt > 0.45 ? 'holds till teatime' : 'eat it now')}
+      <div class="cost">costs you <b>${money(Math.round(s.cost))}</b> ·
+        worth about <b>${money(price)}</b> ·
+        ${D.ceilingBonus(s) > 0 ? `they'll go <b>${money(D.ceilingBonus(s))}</b> over the street price for it` : 'no premium on this one'}</div>
+
+      ${churning
+        ? `<div class="churning">the machine is going — ${Math.max(0, Math.ceil(churning.dur - churning.t))}s
+           <div class="cbar"><i style="width:${(churning.t / churning.dur * 100).toFixed(0)}%"></i></div></div>`
+        : `<button class="big" id="churnbtn" style="width:100%">churn a batch of ${D.CHURN.batch}
+             <small>— ${D.CHURN.seconds}s of the afternoon, and some of the cold</small></button>`}
+
+      ${g.invented.length ? `<h3>you've made</h3><table>${g.invented.map(f =>
+      `<tr><td>${f.label}</td><td class="r">${g.stock[f.key] || 0} left</td>
+            <td class="r">${money(g.priceOf(f.key))}</td></tr>`).join('')}</table>` : ''}
+      <div class="note" style="opacity:.5;margin-top:1rem">B to go back to the seat.</div>`;
+
+    const btn = $('churnbtn');
+    if (btn) btn.onclick = () => this.h.churn(this.recipe);
   }
 
   hint(text, ms = 4200) {
@@ -70,6 +139,7 @@ export class UI {
         : b.annoy >= D.JINGLE.annoyWarn ? 'a window just shut' : 'quiet';
     } else { $('annoybar').firstElementChild.style.width = '0%'; $('annoytxt').textContent = '—'; }
 
+    if (this.bayOpen && g.churning) this.drawBay();     // the machine's countdown
     $('drawertxt').textContent = money(g.drawer);
     const h = Math.floor(g.hour), m = Math.floor((g.hour % 1) * 60);
     $('hourtxt').textContent = `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')}`;
@@ -104,11 +174,12 @@ export class UI {
         (p.qty > 1 ? ' · two of them, the same as always' : '') +
         (p.wrongs ? ' · they are being patient about it' : '');
       const ceiling = g.ceilingOf(p.block);
-      $('menu').innerHTML = D.MENU.map((m, i) => {
+      $('menu').innerHTML = g.menu().map((m, i) => {
         const price = g.priceOf(m.key);
         const out = (g.stock[m.key] || 0) <= 0;
-        const tell = TELL[D.faceOf(D.priceReaction(ceiling, price))];
-        return `<button data-key="${m.key}" class="${out ? 'out' : ''}">
+        const bonus = m.stats ? D.ceilingBonus(m.stats) : 0;
+        const tell = TELL[D.faceOf(D.priceReaction(ceiling + bonus, price))];
+        return `<button data-key="${m.key}" class="${out ? 'out' : ''}${m.invented ? ' mine' : ''}">
           <span class="k">${i + 1}</span>${m.label}
           <span class="p">${money(price)} · ${out ? 'all gone' : tell}</span></button>`;
       }).join('');

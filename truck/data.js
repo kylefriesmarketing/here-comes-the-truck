@@ -159,13 +159,15 @@ export const CUSTOMER = {
 // corporate depot. The margin lives in soft serve, and adults buy that.
 // SERVING KIDS BUILDS REPUTATION. SERVING ADULTS BUILDS CASH. You have to run both.
 // ---------------------------------------------------------------------------
+// `melt` is melt-RESISTANCE: high survives a warm box. It is the same stat the churn bay
+// produces, so an invented flavour and a depot line are judged by exactly one rule.
 export const MENU = [
-  // key      label                    price cost  cold  kid  adult   (cost/price = food cost %)
-  { key: 'eyes',  label: 'the one with the eyes', price: 250, cost: 105, cold: 0.9, kid: 1.00, adult: 0.15, rep: 1.35 },
-  { key: 'bomb',  label: 'a bomb pop',            price: 200, cost:  68, cold: 0.8, kid: 0.90, adult: 0.25, rep: 1.10 },
-  { key: 'scoop', label: 'a scoop',               price: 300, cost:  63, cold: 1.2, kid: 0.60, adult: 0.70, rep: 1.00 },
-  { key: 'cone',  label: 'a soft serve cone',     price: 350, cost:  60, cold: 1.4, kid: 0.50, adult: 1.00, rep: 0.85 },
-  { key: 'pop',   label: 'a freeze pop',          price: 100, cost:  30, cold: 0.5, kid: 0.80, adult: 0.20, rep: 1.20 },
+  // key      label                    price cost  cold  kid  adult  melt   (cost/price = food cost %)
+  { key: 'eyes',  label: 'the one with the eyes', price: 250, cost: 105, cold: 0.9, kid: 1.00, adult: 0.15, rep: 1.35, melt: 0.75 },
+  { key: 'bomb',  label: 'a bomb pop',            price: 200, cost:  68, cold: 0.8, kid: 0.90, adult: 0.25, rep: 1.10, melt: 0.55 },
+  { key: 'scoop', label: 'a scoop',               price: 300, cost:  63, cold: 1.2, kid: 0.60, adult: 0.70, rep: 1.00, melt: 0.45 },
+  { key: 'cone',  label: 'a soft serve cone',     price: 350, cost:  60, cold: 1.4, kid: 0.50, adult: 1.00, rep: 0.85, melt: 0.35 },
+  { key: 'pop',   label: 'a freeze pop',          price: 100, cost:  30, cold: 0.5, kid: 0.80, adult: 0.20, rep: 1.20, melt: 0.65 },
 ];
 export const MENU_BY_KEY = Object.fromEntries(MENU.map(m => [m.key, m]));
 
@@ -185,6 +187,12 @@ export const ADULT_ORDERS = {
   cone:  ['a cone. soft serve.', 'a twist cone, please'],
   pop:   ['a freeze pop'],
 };
+// What they call something you invented this afternoon. They have no name for it yet.
+export const INVENTED_ORDERS = {
+  kid: ['the new one', 'the one you made', 'whatever that one is', 'that one. the one there.'],
+  adult: ['whatever the new one is', "i'll try the new one", 'the one on the board there'],
+};
+
 // The one nobody has. Fires occasionally and is never fillable — that's the joke (bible §10).
 export const IMPOSSIBLE_ORDERS = [
   'do you have the taco one',
@@ -240,6 +248,69 @@ export const LAW = {
   schoolHours: [8.0, 15.5],
   ticketNoise: 5000, ticketSchool: 10000, ticketSpot: 5000,
   impoundAt: 40000,             // the ticket-judgment meter. Visible for twenty days.
+};
+
+// ---------------------------------------------------------------------------
+// THE CHURN BAY (bible §10) — the fourth pillar, "invent the treats".
+// It lives in the back of the truck: park, turn around, three steps. No lab screen.
+//
+// Every recipe resolves to FOUR STATS and nothing else:
+//   sweet — what children want
+//   novel — what adults want, and what a street will pay over the odds for
+//   melt  — how long it survives once the box starts losing its cold
+//   cost  — what it costs you to make, in cents
+//
+// ⚠️ THE COMEDY AXIS IS SUGAR-MAXIMALISM AND CHILDHOOD CHAOS, never gross-out. MY BREW
+// already owns "revolting thing in the product"; if this game's jokes are also that, it
+// reads as a reskin of the brewery. Nothing here is disgusting. It is just too much.
+// ---------------------------------------------------------------------------
+export const BASES = [
+  { key: 'custard', label: 'custard', sweet: 0.55, novel: 0.30, melt: 0.70, cost: 55 },
+  { key: 'soft', label: 'soft serve', sweet: 0.45, novel: 0.25, melt: 0.45, cost: 42 },
+  { key: 'ice', label: 'water ice', sweet: 0.35, novel: 0.35, melt: 0.30, cost: 26 },
+  { key: 'bar', label: 'bar', sweet: 0.60, novel: 0.20, melt: 0.80, cost: 48 },
+];
+export const MIXINS = [
+  { key: 'cocoa', label: 'chocolate', sweet: 0.10, novel: 0.08, melt: 0.05, cost: 14 },
+  { key: 'peanut', label: 'peanut', sweet: 0.06, novel: 0.14, melt: 0.10, cost: 18 },
+  { key: 'straw', label: 'strawberry', sweet: 0.12, novel: 0.06, melt: -0.04, cost: 12 },
+  { key: 'banana', label: 'banana', sweet: 0.09, novel: 0.11, melt: 0.02, cost: 11 },
+  { key: 'mint', label: 'mint', sweet: 0.04, novel: 0.16, melt: 0.03, cost: 10 },
+  { key: 'cookie', label: 'cookie', sweet: 0.14, novel: 0.12, melt: 0.08, cost: 19 },
+  { key: 'coffee', label: 'coffee', sweet: -0.06, novel: 0.22, melt: 0.02, cost: 16 },
+  { key: 'gum', label: 'bubblegum', sweet: 0.20, novel: 0.18, melt: -0.02, cost: 13 },
+];
+export const FINISHES = [
+  { key: 'none', label: 'plain', suffix: '', sweet: 0, novel: 0, melt: 0, cost: 0 },
+  { key: 'shell', label: 'a chocolate shell', suffix: ', dipped', sweet: 0.06, novel: 0.10, melt: 0.16, cost: 15 },
+  { key: 'sprinkles', label: 'sprinkles', suffix: ', with sprinkles', sweet: 0.10, novel: 0.12, melt: 0.00, cost: 9 },
+  { key: 'sauce', label: 'sauce', suffix: ', with sauce', sweet: 0.18, novel: 0.06, melt: -0.12, cost: 12 },
+];
+export const BASE_BY_KEY = Object.fromEntries(BASES.map(b => [b.key, b]));
+export const MIXIN_BY_KEY = Object.fromEntries(MIXINS.map(m => [m.key, m]));
+export const FINISH_BY_KEY = Object.fromEntries(FINISHES.map(f => [f.key, f]));
+
+// ⚠️ SECRET. Never listed in the UI — found by experimenting, and by Cy saying something
+// that turns out not to be small talk. A Legendary is a FLOOR PLUS A BONUS, never an
+// override: MY BREW's legendary branch REPLACED the score and capped it below what a
+// plain two-ingredient recipe could reach, which made its entire discovery fantasy
+// mechanically pointless. A deliberately dull recipe stays dull; a good one gets lifted.
+export const LEGENDARIES = [
+  { id: 'midnight', name: 'The Midnight', base: 'custard', mixins: ['coffee', 'cocoa'], finish: 'shell',
+    floor: { novel: 0.92, melt: 0.80 }, hint: "cy: 'somebody used to do a coffee one. adults only. dipped.'" },
+  { id: 'summer', name: 'The Whole Summer', base: 'ice', mixins: ['gum', 'straw'], finish: 'sprinkles',
+    floor: { sweet: 0.98, novel: 0.75 }, hint: "cy: 'the pink one with the gum in it. every kid on birch, for a whole july.'" },
+  { id: 'lunchbox', name: 'The Lunchbox', base: 'bar', mixins: ['peanut', 'cookie'], finish: 'sauce',
+    floor: { sweet: 0.90, novel: 0.85, melt: 0.72 }, hint: "cy: 'peanut and a cookie, on a stick. the men at vance used to buy two.'" },
+];
+
+export const CHURN = {
+  seconds: 38,          // sim-seconds in the bay — about half an hour of the afternoon
+  coldCost: 0.030,      // the machine runs off the same box you are selling out of
+  batch: 8,             // how many you get
+  maxMixins: 2,
+  targetFoodCost: 0.32, // what the suggested price is worked back from
+  meltSpan: 1.30,       // see softFor(): melt 1.0 survives to ~0.3x the normal threshold
 };
 
 // ---------------------------------------------------------------------------
@@ -407,6 +478,76 @@ export function willBuy(ceilingCents, priceCents) {
 
 /** What you owe them back. Integer cents; negative means they're short. */
 export function changeDue(tenderCents, priceCents) { return tenderCents - priceCents; }
+
+// ---------------------------------------------------------------------------
+// THE RECIPE FORMULAS. ⚠️ The bay's live readout and the actual sale both read these,
+// so the four bars you watch while churning cannot lie about what you are making.
+// ---------------------------------------------------------------------------
+
+/** base + up to two mix-ins + a finish -> {sweet, novel, melt, cost, legend}.
+ *  `noFloor` exists ONLY so the battery can prove the legendary floor never LOWERS a
+ *  stat — that is the exact bug MY BREW shipped, and it needs a test that cannot be
+ *  fooled by a reimplementation of this formula drifting out of sync with it. */
+export function recipeStats(recipe, noFloor) {
+  const b = BASE_BY_KEY[recipe.base] || BASES[0];
+  const fin = FINISH_BY_KEY[recipe.finish] || FINISHES[0];
+  const mix = (recipe.mixins || []).map(k => MIXIN_BY_KEY[k]).filter(Boolean);
+  const s = { sweet: b.sweet, novel: b.novel, melt: b.melt, cost: b.cost };
+  for (const m of [...mix, fin]) {
+    s.sweet += m.sweet; s.novel += m.novel; s.melt += m.melt; s.cost += m.cost;
+  }
+  // two of the same note is less interesting than two different ones
+  if (mix.length === 2 && mix[0].key === mix[1].key) s.novel -= 0.10;
+  s.sweet = Math.max(0, Math.min(1.2, s.sweet));
+  s.novel = Math.max(0, Math.min(1.2, s.novel));
+  s.melt = Math.max(0.05, Math.min(1.0, s.melt));
+
+  // ⚠️ FLOOR, not override. A cursed recipe stays cursed; a good one gets lifted.
+  const leg = noFloor ? null : legendaryFor(recipe);
+  if (leg) {
+    for (const k in leg.floor) s[k] = Math.max(s[k], leg.floor[k]);
+    s.legend = leg.id;
+  }
+  return s;
+}
+
+/** Does this exact recipe match a secret? Mix-in order must not matter. */
+export function legendaryFor(recipe) {
+  const mine = [...(recipe.mixins || [])].sort().join('|');
+  return LEGENDARIES.find(l =>
+    l.base === recipe.base && l.finish === recipe.finish && [...l.mixins].sort().join('|') === mine) || null;
+}
+
+/** "chocolate-coffee custard, dipped" — composed, so every invention names itself. */
+export function flavourName(recipe) {
+  const leg = legendaryFor(recipe);
+  if (leg) return leg.name;
+  const b = BASE_BY_KEY[recipe.base] || BASES[0];
+  const mix = (recipe.mixins || []).map(k => MIXIN_BY_KEY[k]).filter(Boolean);
+  const fin = FINISH_BY_KEY[recipe.finish] || FINISHES[0];
+  const front = mix.length ? mix.map(m => m.label).join('-') + ' ' : 'plain ';
+  return front + b.label + fin.suffix;
+}
+
+/** Who wants it. These feed the same kid/adult fields the stock menu uses. */
+export function kidAppeal(s) { return Math.max(0, Math.min(1.2, 0.28 + s.sweet * 0.80)); }
+export function adultAppeal(s) { return Math.max(0, Math.min(1.2, 0.14 + s.novel * 0.98)); }
+
+/** What a novel flavour lets you charge over a street's usual ceiling, in cents. */
+export function ceilingBonus(s) { return Math.round(Math.max(0, s.novel - 0.45) * 190); }
+
+/** Worked back from food cost, to the nearest quarter. The bay shows this number. */
+export function suggestedPrice(s) {
+  return Math.max(50, Math.round(s.cost / CHURN.targetFoodCost / 25) * 25);
+}
+
+/**
+ * The cold level below which THIS item goes soft.
+ * ⚠️ Per item, not global. A 0.8-melt bar is still worth full price at a cold the water
+ * ice gave up on an hour ago — which is the whole reason melt-resistance is a stat you
+ * would trade sweetness for, and it is what ties the flavour lab to the cold budget.
+ */
+export function softBelow(melt) { return COLD.softAt * (CHURN.meltSpan - melt); }
 
 /** Heat curve across the day. Real operators report sales DECLINE above 100F — there is
  *  an optimum hot band, not "hotter is better." Peaks mid-afternoon, eases off at dusk. */

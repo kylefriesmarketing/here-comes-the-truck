@@ -8,7 +8,32 @@
 
 ---
 
-## Status — Phase 1, a reason to come back · 2026-08-11
+## Status — Phase 2, the churn bay · 2026-08-11
+
+**The fourth pillar, "invent the treats" — and the last unbuilt item in the bible's own
+v0.1 slice.** Park, turn around, three steps: a modelled bay in the back of the truck with
+a churn machine, a counter, topping tubs and the freezer chest.
+
+Pick a base, up to two mix-ins and a finish. Every recipe resolves to **four stats** —
+sweet (what children want), novel (what adults want, and what buys headroom over a
+street's price ceiling), melt (how long it survives a warming box), cost. The flavour
+**names itself** from its ingredients ("cookie-bubblegum custard, with sprinkles"), joins
+the menu, and can be sold the same afternoon. Three **secret Legendaries**, never listed,
+found by experiment and by Cy saying something that turns out not to be small talk.
+
+Churning costs 38 s of your afternoon and a bite of the cold, out of the same box you're
+selling from, with the window shut. That's the whole decision.
+
+| what you churned | takings | vs not churning |
+|---|---|---|
+| nothing — sell the depot lines | $41.00 | — |
+| plain water ice | $37.63 | **−8%** |
+| cookie-bubblegum custard | $45.34 | +11% |
+| The Midnight *(legendary)* | $46.16 | **+13%** |
+
+Inventing badly loses money, inventing well pays, and the Legendary is best. Not inverted.
+
+## Phase 1, a reason to come back · 2026-08-11
 
 On top of Phase 0: **six truck upgrades** bought from the clipboard on the dash (the
 second cold plate measures **+1.3 h of afternoon and +23% takings** — the kill-gate's
@@ -240,6 +265,32 @@ Kept because a green test suite is not a working game, and three of these ran fu
     deterministic; its *benefit* arrives through takings whose spread is 54–101% of the
     mean, so at n=6 it is simply not resolvable. The trial now says so out loud instead
     of being bent until it passes.
+
+### Phase 2 — the churn bay
+34. **`continue` in the policy bot's loop froze time.** The `g.step()` that advances the
+    sim is at the BOTTOM of the loop, so skipping an iteration while the machine churned
+    meant the churn never finished, every trial cell died on the guard, and all four read
+    exactly $0.00. Gate the work, don't skip the tick.
+35. **A camera position is not a location.** The bay's camera pose existed before any bay
+    geometry did, so turning round showed you the empty street *behind* the truck — the
+    body box is front-face culled, so there was nothing to stop you seeing through it.
+36. **Side walls only in the REAR section.** The bay needs walls or you stand inside your
+    own truck looking at somebody's front garden. But walls running the full length are
+    exactly what boxed the cab in (trap 29). They stop behind the driver's seat, and the
+    window side is walled only *behind* the serving hatch so the opening stays open.
+37. **Wheels must sit outboard of the bay floor**, or the tyres poke up through it and
+    you are standing in the back of the truck next to a wheel.
+38. **Three lookups still went through `D.MENU_BY_KEY`** after the menu became dynamic —
+    `_act_change`, `_act_price` and the number keys. An invented flavour is not in `MENU`,
+    so serving one threw on `item.rep` at the moment of taking the money. Anything that
+    resolves an item key must go through `itemOf()`.
+39. **"Does somebody happen to ask for it" is a coin flip, not a test.** With six items on
+    the menu and a handful of fresh come-outs at one parked spot, the churn-sale assertion
+    failed on an unlucky seed while the mechanism was perfectly fine. Split it: assert the
+    invention is *in the order pool*, then force one real sale through.
+40. **A legendary floor must actually raise something.** A floor sitting under what the
+    ingredients already reach is a decorative label, not a discovery worth hunting — the
+    battery now asserts each one lifts at least one stat, as well as lowering none.
 
 ### The view
 15. **A hidden Browser-pane tab suspends rAF**, so `draw()` never runs, the camera is never

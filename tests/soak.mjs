@@ -270,6 +270,77 @@ if (c.hash === a.hash) bad(`seeds 999 and 1000 produced identical runs — the s
   if (missed.length) bad(`UNSERVABLE regular(s): ${missed.join(', ')} — a named character cannot be reached at all`);
 }
 
+{
+  // THE CHURN BAY — invent something and sell it the same day (the bible's v0.1 item 5).
+  const g = new Game({ seed: 41 });
+  g.act('park');
+  g.act('song', true);          // or nobody comes out and "cannot sell it" means "nobody asked"
+  const before = g.menu().length;
+  const r = g.act('churn', { base: 'custard', mixins: ['cookie', 'gum'], finish: 'sprinkles' });
+  if (!r.ok) bad(`could not start a churn: ${r.msg}`);
+  const coldBefore = g.cold;
+  for (let i = 0; i < 60 * (D.CHURN.seconds + 2); i++) g.step(FIXED, {});
+  if (!(coldBefore - g.cold > 0)) bad('churning cost no cold at all — the machine is free');
+  g.act('song', false);
+  const made = g.invented[0];
+  console.log(`the bay:         churned "${made ? made.label : 'NOTHING'}" -> ${made ? g.stock[made.key] : 0} in the box`);
+  if (!made) bad('the churn produced nothing');
+  else {
+    if (g.menu().length !== before + 1) bad(`the invention did not join the menu`);
+    if ((g.stock[made.key] || 0) !== D.CHURN.batch) bad(`wrong batch size: ${g.stock[made.key]}`);
+    if (!(g.priceOf(made.key) > 0)) bad('the invention has no price');
+    // ⚠️ TWO CRISP ASSERTIONS, not one flaky one. "Does somebody happen to ask for it"
+    // is a coin flip at one parked spot with six items on the menu — it failed on an
+    // unlucky seed while the mechanism was perfectly fine. Assert (a) it is in the pool
+    // people draw their orders from, and (b) a real sale of it completes.
+    const pool = g.menu().filter(m => (g.stock[m.key] || 0) > 0).map(m => m.key);
+    if (!pool.includes(made.key)) bad('the invention is not in the pool customers order from');
+
+    g.act('song', true); g.act('window', true);
+    let sold = 0;
+    for (let i = 0; i < 60 * 240 && !sold; i++) {
+      g.step(FIXED, {});
+      const p = g.serving; if (!p) continue;
+      if (p.stage === 'ask') {
+        const rr = g.act('serve', made.key);          // hand them the new thing
+        if (!rr.ok && !rr.wrong) { p.state = 'leaving'; g.serving = null; }
+      } else if (p.stage === 'pay') { g.act('change', D.changeDue(p.tender, p.price)); sold = g.stats.inventedSold; }
+      else if (p.stage === 'short') { g.act('mercy'); sold = g.stats.inventedSold; }
+    }
+    if (!sold) bad('an invented flavour could not be sold the same day');
+    else console.log(`                 in the order pool, and sold the same afternoon (drawer $${(g.drawer / 100).toFixed(2)})`);
+  }
+}
+{
+  // ⚠️ A LEGENDARY IS A FLOOR PLUS A BONUS, NEVER AN OVERRIDE. MY BREW's legendary branch
+  // REPLACED the score and capped it BELOW what a plain two-ingredient recipe reached,
+  // which made its whole discovery fantasy mechanically pointless. Prove every floor
+  // only ever raises a stat, using the same formula rather than a reimplementation of it.
+  const lifts = [];
+  for (const l of D.LEGENDARIES) {
+    const rec = { base: l.base, mixins: l.mixins, finish: l.finish };
+    const on = D.recipeStats(rec), off = D.recipeStats(rec, true);
+    let lift = 0;
+    for (const k of ['sweet', 'novel', 'melt']) {
+      if (on[k] < off[k] - 1e-9) bad(`legendary "${l.id}" LOWERS ${k} (${off[k].toFixed(2)} -> ${on[k].toFixed(2)}) — that is an override, not a floor`);
+      lift = Math.max(lift, on[k] - off[k]);
+    }
+    // ⚠️ and it must actually DO something. A floor sitting under what the ingredients
+    // already give is a decorative label, not a discovery worth hunting for.
+    if (lift < 0.05) bad(`legendary "${l.id}" raises nothing — its floors are below what the ingredients already reach`);
+    lifts.push(`${l.id} +${lift.toFixed(2)}`);
+    if (!D.legendaryFor({ base: l.base, mixins: [...l.mixins].reverse(), finish: l.finish }))
+      bad(`legendary "${l.id}" does not match when its mix-ins are in the other order`);
+  }
+  console.log(`legendaries:     ${D.LEGENDARIES.length}, all floors and all lift something (${lifts.join(', ')}), order-independent`);
+}
+{
+  // per-item melt: a tough bar must outlast a soft one as the box warms
+  const tough = D.softBelow(0.85), weak = D.softBelow(0.30);
+  console.log(`melt:            a 0.85-melt item softens at cold ${tough.toFixed(3)}, a 0.30-melt at ${weak.toFixed(3)}`);
+  if (!(tough < weak)) bad('melt-resistance does not delay softening — the stat is inert');
+}
+
 // ---- verdict ---------------------------------------------------------------
 if (problems.length) {
   console.log(`\n*** ${problems.length} PROBLEM(S) ***`);

@@ -55,6 +55,13 @@ export class Game {
     for (const m of D.MENU) { this.stock[m.key] = 11 + this.mod.stockAdd; this.prices[m.key] = m.price; }
     if (opts.prices) Object.assign(this.prices, opts.prices);
 
+    // THE CHURN BAY. What you have invented, what you have discovered, and what is
+    // currently going round in the machine in the back.
+    this.invented = (opts.invented || []).map(f => ({ ...f }));
+    this.discovered = { ...(opts.discovered || {}) };
+    this.churning = null;
+    for (const f of this.invented) { this.stock[f.key] = 0; this.prices[f.key] = f.price; }
+
     // Who has met you, and who has already said their one mid-summer line.
     this.met = { ...(opts.met || {}) };
     this.saidMid = { ...(opts.saidMid || {}) };
@@ -79,7 +86,7 @@ export class Game {
     this.stats = {
       served: 0, wrong: 0, walkedOff: 0, cameOut: 0, mercy: 0,
       refused: 0, shorted: 0, shortCaught: 0, balked: 0, impossible: 0,
-      bumps: 0, songSec: 0, driven: 0,
+      bumps: 0, songSec: 0, driven: 0, churned: 0, legendaries: 0, inventedSold: 0,
     };
   }
 
@@ -326,9 +333,14 @@ export class Game {
     // The one nobody has. It is never fillable, and that is the joke. Regulars are
     // exempt — they know exactly what they want and they have for years.
     const impossible = !reg && this.chance(0.055);
-    const want = reg ? reg.wants : this.pick(D.MENU).key;
+    // ⚠️ only ask for what is actually in the box — otherwise an invented flavour you
+    // have run out of keeps getting requested and every one of those is a dead sale
+    const have = this.menu().filter(m => (this.stock[m.key] || 0) > 0);
+    const want = reg ? reg.wants : this.pick(have.length ? have : D.MENU).key;
+    const inv = !reg && this.invented.some(f => f.key === want);
     let said;
     if (impossible) { said = this.pick(D.IMPOSSIBLE_ORDERS); this.stats.impossible++; }
+    else if (inv) said = this.pick(D.INVENTED_ORDERS[kid ? 'kid' : 'adult']);
     else if (reg) {
       // their one mid-summer line, once ever, on a later visit
       const useMid = this.met[reg.id] && !this.saidMid[reg.id] && this.chance(0.4);
@@ -463,6 +475,13 @@ export class Game {
     this.t += dt;
     this.hour = D.DAY.startHour + this.t / D.DAY.secondsPerHour;
     const heat = D.heatAt(this.hour);
+
+    // the machine in the back runs off the same box you are selling out of
+    if (this.churning) {
+      this.churning.t += dt;
+      this.cold = Math.max(0, this.cold - D.CHURN.coldCost * dt / D.CHURN.seconds);
+      if (this.churning.t >= this.churning.dur) this._finishChurn();
+    }
     this.cold -= D.coldDrain({
       windowOpen: this.windowOpen,
       moving: Math.abs(this.truck.v) > 0.5,
@@ -473,7 +492,18 @@ export class Game {
     else if (this.hour >= D.DAY.duskHour) this._endDay('dusk');
   }
 
+  // ---- the menu, which is the stock list PLUS whatever you invented ---------
+  /** Everything you can sell right now. The UI and the sim both iterate this. */
+  menu() { return [...D.MENU, ...this.invented]; }
+  itemOf(key) { return D.MENU_BY_KEY[key] || this.invented.find(f => f.key === key) || null; }
+
   soft() { return this.cold < D.COLD.softAt; }
+  /** ⚠️ PER ITEM. A high-melt bar is still worth full price at a cold that finished the
+   *  water ice an hour ago — that is what makes melt-resistance worth trading for. */
+  softFor(key) {
+    const it = this.itemOf(key);
+    return this.cold < D.softBelow(it && it.melt !== undefined ? it.melt : 0.5);
+  }
 
   // ---- what the upgrades actually change. ONE place each. -------------------
   songRadius() { return D.JINGLE.radius * this.mod.radiusMul; }
@@ -488,8 +518,9 @@ export class Game {
    * shipped an inverted progression curve precisely because those were two code paths.
    */
   priceOf(key) {
-    const base = this.prices[key] ?? D.MENU_BY_KEY[key].price;
-    return this.soft() ? Math.round(base * D.COLD.softPenalty) : base;
+    const it = this.itemOf(key);
+    const base = this.prices[key] ?? (it ? it.price : 100);
+    return this.softFor(key) ? Math.round(base * D.COLD.softPenalty) : base;
   }
 
   // ---- actions — ONE dispatch, shared by the UI and the soak bot -----------
@@ -554,7 +585,7 @@ export class Game {
     const p = this.serving;
     if (!p) return { ok: false, msg: 'nobody at the window' };
     if (p.stage !== 'ask') return { ok: false, msg: 'they are waiting on their change' };
-    const item = D.MENU_BY_KEY[key];
+    const item = this.itemOf(key);
     if (!item) return { ok: false, msg: 'no such item' };
     if ((this.stock[key] || 0) <= 0) return { ok: false, msg: 'out of that' };
 
@@ -573,7 +604,9 @@ export class Game {
 
     // ⚠️ ONE formula. This is the same call the face at the window is drawn from —
     // the readout and the behaviour cannot drift.
-    const ceiling = this.ceilingOf(p.block);
+    // an invented flavour that is genuinely NOVEL buys headroom over the street's usual
+    // ceiling — this is where the lab pays for itself
+    const ceiling = this.ceilingOf(p.block) + (item.stats ? D.ceilingBonus(item.stats) : 0);
     // Mr Bell buys two. He has bought two every week since June died. He never explains
     // and you never ask — so the till, the stock and the cold all count both of them.
     const qty = p.qty || 1;
@@ -594,6 +627,7 @@ export class Game {
     }
 
     this.stock[key] -= qty;
+    if (item.invented) this.stats.inventedSold += qty;
     this.cold = Math.max(0, this.cold - item.cold * D.COLD.perSaleUnit * qty);
     p.gave = key; p.price = price;
 
@@ -613,7 +647,8 @@ export class Game {
     if (!p || p.stage !== 'pay') return { ok: false, msg: 'nobody owed change' };
     const due = D.changeDue(p.tender, p.price);
     const give = Math.max(0, Math.round(cents));
-    const item = D.MENU_BY_KEY[p.gave];
+    const item = this.itemOf(p.gave) || { rep: 1 };   // ⚠️ itemOf, not MENU_BY_KEY — an
+    //                                                  invented flavour is not in MENU
 
     this.drawer += p.tender - give;
     let note = 'right';
@@ -679,6 +714,54 @@ export class Game {
     this.cb.served && this.cb.served(p, note);
   }
 
+  /**
+   * THE CHURN BAY. Park, turn around, three steps.
+   * ⚠️ It costs you SELLING TIME and COLD out of the same box you are selling from, and
+   * the window has to be shut — that is the whole decision. Invent now and lose the
+   * afternoon's next two stops, or sell now and take the depot's margins another day.
+   */
+  _act_churn(recipe) {
+    if (this.churning) return { ok: false, msg: 'the machine is already going' };
+    if (!this.truck.parked) return { ok: false, msg: 'you cannot churn while driving' };
+    if (this.windowOpen) return { ok: false, msg: 'shut the window first' };
+    if (!D.BASE_BY_KEY[recipe && recipe.base]) return { ok: false, msg: 'pick a base' };
+    const mixins = (recipe.mixins || []).slice(0, D.CHURN.maxMixins);
+    const r = { base: recipe.base, mixins, finish: recipe.finish || 'none' };
+    this.churning = { recipe: r, t: 0, dur: D.CHURN.seconds };
+    this.cb.churnStart && this.cb.churnStart(r);
+    return { ok: true, name: D.flavourName(r), stats: D.recipeStats(r) };
+  }
+
+  _finishChurn() {
+    const r = this.churning.recipe;
+    this.churning = null;
+    const stats = D.recipeStats(r);
+    const name = D.flavourName(r);
+    const key = 'inv:' + r.base + '|' + [...r.mixins].sort().join(',') + '|' + r.finish;
+
+    let f = this.invented.find(x => x.key === key);
+    if (!f) {
+      f = {
+        key, label: name, recipe: r, stats,
+        price: D.suggestedPrice(stats), cost: Math.round(stats.cost),
+        cold: 0.9 + (1 - stats.melt) * 0.5,
+        kid: D.kidAppeal(stats), adult: D.adultAppeal(stats),
+        rep: 1.0, melt: stats.melt, invented: true,
+      };
+      this.invented.push(f);
+      this.prices[key] = f.price;
+      this.stock[key] = 0;
+      if (stats.legend && !this.discovered[stats.legend]) {
+        this.discovered[stats.legend] = 1;
+        this.stats.legendaries++;
+        this.cb.legendary && this.cb.legendary(D.LEGENDARIES.find(l => l.id === stats.legend), f);
+      }
+    }
+    this.stock[key] += D.CHURN.batch;
+    this.stats.churned++;
+    this.cb.churnDone && this.cb.churnDone(f);
+  }
+
   /** Buy a thing for the truck. The first meaningful one must land inside 45 minutes. */
   _act_buy(key) {
     const u = D.UPGRADE_BY_KEY[key];
@@ -699,7 +782,7 @@ export class Game {
   /** Set what you're charging. Price discovery by face is the loop this feeds. */
   _act_price(arg) {
     const { key, cents } = arg || {};
-    if (!D.MENU_BY_KEY[key]) return { ok: false, msg: 'no such item' };
+    if (!this.itemOf(key)) return { ok: false, msg: 'no such item' };   // invented too
     this.prices[key] = Math.max(25, Math.round(cents / 25) * 25);   // to the nearest quarter
     return { ok: true, price: this.prices[key] };
   }
@@ -736,6 +819,8 @@ export class Game {
       noteDue: this.noteDue, notePaid: this.notePaid, noteMisses: this.noteMisses,
       lastRegular: this.lastRegular || null, metToday: [...this.metToday],
       met: { ...this.met }, owned: { ...this.owned },
+      invented: this.invented.map(f => ({ ...f })), discovered: { ...this.discovered },
+      churned: this.stats.churned, inventedSold: this.stats.inventedSold,
       annoy: Object.fromEntries(Object.values(this.blocks).map(b => [b.id, Math.round(b.annoy * 100) / 100])),
     };
   }
@@ -749,6 +834,8 @@ export class Game {
       noteMisses: this.noteMisses, song: this.song, windowOpen: this.windowOpen,
       stock: { ...this.stock }, prices: { ...this.prices }, pid: this._pid,
       owned: { ...this.owned }, met: { ...this.met }, saidMid: { ...this.saidMid },
+      invented: this.invented.map(f => ({ ...f })), discovered: { ...this.discovered },
+      churning: this.churning ? { ...this.churning, recipe: { ...this.churning.recipe } } : null,
       metToday: [...this.metToday], lastRegular: this.lastRegular || null,
       blocks: Object.fromEntries(Object.entries(this.blocks).map(([k, b]) => [k, b.annoy])),
       houses: this.houses.map(h => [h.heard, h.out ? 1 : 0, h.cool]),
@@ -771,6 +858,9 @@ export class Game {
     this.stock = { ...s.stock }; this._pid = s.pid;
     if (s.prices) this.prices = { ...s.prices };
     this.owned = { ...(s.owned || {}) }; this.mod = D.mods(this.owned);
+    this.invented = (s.invented || []).map(f => ({ ...f }));
+    this.discovered = { ...(s.discovered || {}) };
+    this.churning = s.churning ? { ...s.churning, recipe: { ...s.churning.recipe } } : null;
     this.met = { ...(s.met || {}) }; this.saidMid = { ...(s.saidMid || {}) };
     this.metToday = [...(s.metToday || [])]; this.lastRegular = s.lastRegular || null;
     for (const [k, a] of Object.entries(s.blocks)) if (this.blocks[k]) this.blocks[k].annoy = a;
@@ -848,7 +938,7 @@ export function soakRun(seed, opts = {}) {
   // stop at every OTHER house, in the same places, every seed — three of the five named
   // regulars were served zero times in 24 days purely because of where they sat in the
   // rhythm. A route driver's stops are not on a metronome.
-  let guard = 0, lastT = -1, stopT = 0, stuckT = 0, sinceStop = 999, commit = null;
+  let guard = 0, lastT = -1, stopT = 0, stuckT = 0, sinceStop = 999, commit = null, churned = false;
   // ⚠️ SMALL — just enough to clear the spot you're standing in. It is the AHEAD filter,
   // not this distance, that stops the bot shuffling in place. At 22-48 m the truck drove
   // past everyone who came out WHILE IT WAS PARKED (they are behind it by the time it
@@ -928,12 +1018,19 @@ export function soakRun(seed, opts = {}) {
     if (tr.parked) {
       input.throttle = 0; input.brake = 0;
       stopT += FIXED;
-      if (!g.windowOpen) act('window', true);
+      // ⚠️ Churn through the REAL act() path, at the first stop, BEFORE opening up — so
+      // the trial pays the actual price of inventing (38 s of the afternoon and a bite of
+      // the cold) rather than being handed a free flavour in the box.
+      // ⚠️ NOT `continue` — the g.step() that advances the sim is at the BOTTOM of this
+      // loop, so skipping to the next iteration freezes time, the churn never finishes,
+      // and every cell dies on the guard having sold nothing.
+      if (P.churn && !churned && !g.churning) { act('churn', P.churn); churned = true; }
+      if (!g.churning && !g.windowOpen) act('window', true);
       // The law says silence the instant you're stationary — but every stop is a gamble:
       // a few more seconds of song pulls another kid off the next block. songGrace is
       // exactly how many seconds of that bribe this policy takes.
       if (g.song && stopT >= songGrace) act('song', false);
-      const p = g.serving;
+      const p = g.churning ? null : g.serving;
       if (p) {
         if (p.stage === 'ask') {
           // sometimes hand over the wrong thing — the order was in kid
@@ -946,7 +1043,7 @@ export function soakRun(seed, opts = {}) {
         } else if (p.stage === 'short') {
           act(brng() < 0.62 ? 'mercy' : 'refuse');
         }
-      } else if (stopT > 18 + patience * 40 || (g.queueLen() === 0 && stopT > 12)) {
+      } else if (!g.churning && (stopT > 18 + patience * 40 || (g.queueLen() === 0 && stopT > 12))) {
         act('window', false);
         if (act('depart').ok) {
           act('song', true); stopT = 0; sinceStop = 0; commit = null; bot.departs++;

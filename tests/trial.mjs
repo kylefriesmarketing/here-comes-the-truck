@@ -41,7 +41,7 @@ function cell(label, policy, prices, owned) {
     lo: Math.min(...gross), hi: Math.max(...gross),
     served: m(r => r.served), balked: m(r => r.stats.balked),
     cameOut: m(r => r.cameOut), walked: m(r => r.walkedOff),
-    rep: m(r => r.rep), heat: m(r => r.noiseHeat),
+    rep: m(r => r.rep), heat: m(r => r.noiseHeat), invSold: m(r => r.stats.inventedSold),
     annoy: m(r => Math.max(...Object.values(r.annoy))),
     hour: m(r => r.hour),
   };
@@ -157,6 +157,37 @@ for (const r of C) {
     problems.push(`"${r.label}" leaves you ${((1 - r.gross / base.gross) * 100).toFixed(0)}% WORSE off than buying nothing`);
   }
 }
+
+// =========================================================================
+// TRIAL D — IS INVENTING WORTH THE AFTERNOON? Churning costs 38 s of selling time and a
+// bite of the cold, taken through the REAL act() path at the bot's first stop. If a good
+// flavour doesn't earn that back the same day, the fourth pillar is a hobby, not a system.
+// =========================================================================
+console.log(`\nTRIAL D — the churn bay   (n=${N} days per cell)`);
+console.log(`  ${pad('what you churned', 30)}${rt('gross', 9)}${rt('sold', 7)}${rt('of it', 7)}${rt('ends at', 9)}${rt('vs none', 9)}`);
+const noChurn = cell('nothing — sell the depot lines', {});
+const Dc = [
+  noChurn,
+  cell('plain water ice', { churn: { base: 'ice', mixins: [], finish: 'none' } }),
+  cell('cookie-bubblegum custard', { churn: { base: 'custard', mixins: ['cookie', 'gum'], finish: 'sprinkles' } }),
+  cell('The Midnight (legendary)', { churn: { base: 'custard', mixins: ['coffee', 'cocoa'], finish: 'shell' } }),
+];
+for (const r of Dc) {
+  const d = r === noChurn ? '' : ((r.gross - noChurn.gross) / noChurn.gross * 100).toFixed(0) + '%';
+  console.log(`  ${pad(r.label, 30)}${rt($(r.gross), 9)}${rt(r.served.toFixed(1), 7)}` +
+    `${rt(r.invSold.toFixed(1), 7)}${rt(r.hour.toFixed(1) + 'h', 9)}${rt(d, 9)}`);
+}
+const good = Dc[2], legend = Dc[3], dull = Dc[1];
+if (Math.max(good.gross, legend.gross) <= noChurn.gross) {
+  problems.push('churning a GOOD flavour earns no more than not churning at all — the bay costs an afternoon and returns nothing');
+}
+// ⚠️ The MY BREW inversion, restated for this system: the best thing you can make must
+// not lose to the dullest thing you can make.
+if (legend.gross < dull.gross * 0.95) {
+  problems.push(`a Legendary (${$(legend.gross)}) earns less than plain water ice (${$(dull.gross)}) — the progression is inverted`);
+}
+console.log(`  the bay pays back ${(((Math.max(good.gross, legend.gross) - noChurn.gross) / noChurn.gross) * 100).toFixed(0)}% ` +
+  `on its best flavour, and costs ${(noChurn.hour - Math.min(good.hour, legend.hour)).toFixed(1)} h of afternoon.`);
 
 // =========================================================================
 console.log('');
