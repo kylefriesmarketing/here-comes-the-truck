@@ -39,6 +39,7 @@ console.log(`avg took:        $${(avg(r => r.took) / 100).toFixed(2)}`);
 console.log(`avg came out:    ${avg(r => r.cameOut).toFixed(1)}   served ${avg(r => r.served).toFixed(1)}   walked off ${avg(r => r.walkedOff).toFixed(1)}`);
 console.log(`avg wrong item:  ${avg(r => r.wrong).toFixed(1)}   mercy ${avg(r => r.mercy).toFixed(1)}   shorted ${avg(r => r.shorted).toFixed(1)}`);
 console.log(`avg noise heat:  ${avg(r => r.noiseHeat).toFixed(2)}   avg rep ${avg(r => r.rep).toFixed(1)}`);
+console.log(`avg driven:      ${avg(r => r.stats.driven).toFixed(0)} m   (the loop is ~460 m)`);
 console.log(`avg end hour:    ${avg(r => r.hour).toFixed(2)}   (dusk is ${D.DAY.duskHour})`);
 const annoyMax = avg(r => Math.max(...Object.values(r.annoy)));
 console.log(`avg worst block annoy: ${annoyMax.toFixed(2)}  (cold at ${D.JINGLE.annoyCold})`);
@@ -59,6 +60,17 @@ if (!ends.cold) bad(`not one day ran out of cold — the primary end condition n
 // P1 — THE SONG BRINGS THEM. If nobody comes out, the game does not exist.
 if (avg(r => r.cameOut) < 8) bad(`the song is not pulling people out (avg ${avg(r => r.cameOut).toFixed(1)} came out)`);
 if (avg(r => r.served) < 4) bad(`almost nothing is being sold (avg ${avg(r => r.served).toFixed(1)} served)`);
+
+// P1, the other half — DRIVING IS THE GAME. ⚠️ This assertion exists because the battery
+// once ran fully green while the truck drove 57 m in an entire day: the bot diverted to
+// whoever was nearest, and the song spawns customers around the truck, so it shuffled
+// between two houses all afternoon. Every other number looked healthy. Never delete this.
+const driven = avg(r => r.stats.driven);
+if (driven < 400) bad(`the truck only drove ${driven.toFixed(0)} m in a day — it is not running a route (pillar P1)`);
+
+// Nobody should have a shutout. A day that takes $0 means a system is jammed, not unlucky.
+const broke = runs.filter(r => r.took === 0);
+if (broke.length) bad(`${broke.length} day(s) took $0.00 (seeds ${broke.map(r => r.seed).join(', ')}) — something is jammed`);
 
 // The moral engine has to actually fire, or it's decoration.
 if (avg(r => r.mercy) < 0.15) bad(`the kid-is-short case never fires (avg mercy ${avg(r => r.mercy).toFixed(2)})`);
@@ -130,6 +142,26 @@ if (c.hash === a.hash) bad(`seeds 999 and 1000 produced identical runs — the s
   if (Math.abs(radius - want) > 0.35) bad(`turning radius ${radius.toFixed(2)} m does not match the model's ${want.toFixed(2)} m`);
 }
 {
+  // ⚠️ NO SURFACE MAY BE A HOLE IN THE MAP. Surface resistance has a constant part and a
+  // speed-proportional part; if any constant part reaches `accel`, a truck that wanders
+  // onto that surface can never leave it at any throttle, forever. This shipped once:
+  // lawnDrag was a flat 6.5 against an accel of 3.2, so grass ate the truck.
+  const T = D.TRUCK;
+  for (const [name, c] of [['sidewalk', T.kerbDragC], ['lawn', T.lawnDragC]]) {
+    const floor = T.rollDrag + c;
+    if (floor >= T.accel * 0.9) bad(`${name} drag floor ${floor.toFixed(2)} is too close to accel ${T.accel} — the truck can get stuck there forever`);
+  }
+  // and prove it by driving out of one
+  const g = new Game({ seed: 21 });
+  g.truck.x = HP.STREETS[0].at + 0; g.truck.z = HP.XS.walkOut + 1.2;   // parked on the grass
+  g.truck.yaw = Math.PI / 2; g.truck.v = 0;
+  const z0 = g.truck.z, x0 = g.truck.x;
+  for (let i = 0; i < 60 * 8; i++) g.step(FIXED, { throttle: 1 });
+  const escaped = Math.hypot(g.truck.x - x0, g.truck.z - z0);
+  console.log(`off-road:        crawled ${escaped.toFixed(1)} m off the grass in 8 s at full throttle`);
+  if (escaped < 3) bad(`the truck could not get off a lawn (${escaped.toFixed(1)} m in 8 s) — grass is a hole in the map`);
+}
+{
   // ⚠️ THE MIRROR. The single warmest mechanic in the game, and it must never fail open.
   const g = new Game({ seed: 5 });
   g.act('park');
@@ -142,7 +174,26 @@ if (c.hash === a.hash) bad(`seeds 999 and 1000 produced identical runs — the s
   if (blocked.ok) bad(`THE MIRROR FAILED OPEN — the truck pulled away with somebody in the blind zone`);
   g.people[0].z += 30; g.people[0].x += 30;
   if (!g.act('depart').ok) bad(`the mirror stayed blocked after the blind zone cleared`);
-  console.log(`the mirror:      holds when occupied, releases when clear`);
+
+  // ⚠️ AND IT MUST ALWAYS CLEAR ITSELF. Kerb points lie inside the blind zone, so a
+  // customer waiting their turn used to root there and the truck could never leave again
+  // — a permanent, unrecoverable deadlock on a busy stop. Waiting people step aside.
+  const h = new Game({ seed: 6 });
+  h.act('park');
+  const f = h.fwd();
+  h.people.push({
+    id: 9, houseId: h.houses[0].id, block: h.houses[0].block, kid: true,
+    x: h.truck.x + f.x * 3.6, z: h.truck.z + f.z * 3.6,
+    state: 'kerb', t: 0, kx: h.truck.x + f.x * 3.6, kz: h.truck.z + f.z * 3.6,
+    lx: 0, lz: 0, want: 'pop', said: 'x', tender: 500, stage: 'ask',
+  });
+  let freed = -1;
+  for (let i = 0; i < 60 * 12; i++) {
+    h.step(FIXED, {});
+    if (!h.mirrorBlocker()) { freed = i / 60; break; }
+  }
+  if (freed < 0) bad(`THE MIRROR DEADLOCKED — a waiting customer sat in the blind zone for 12 s and the truck could never leave`);
+  else console.log(`the mirror:      holds when occupied, releases when clear, self-clears a loiterer in ${freed.toFixed(1)} s`);
 }
 {
   // the song has to be what pulls them out — not time, not proximity

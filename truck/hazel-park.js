@@ -102,24 +102,38 @@ export function surfaceAt(x, z) {
 // Each one accumulates HEARD and sends somebody out to the kerb.
 // Generated deterministically from the street table so the map is data, not a fixture.
 // ---------------------------------------------------------------------------
+// ⚠️ CORNER is the setback at each end of a street where no house is built. Without it
+// the first house on a cross street lands ~7 m from the other street's centreline — and
+// since a house is 8.2 m wide, it sticks out across the neighbouring SIDEWALK and into
+// the turn. A truck taking that corner drives straight into the side of it and wedges
+// there for the rest of the day. Real corner lots are set back for exactly this reason.
+const CORNER = 14;
+
 export function buildHouses() {
   const out = [];
   const PER_SIDE = 6;
   for (const s of STREETS) {
-    const span = s.to - s.from;
+    const from = s.from + CORNER, to = s.to - CORNER;
+    const span = to - from;
     for (let i = 0; i < PER_SIDE; i++) {
-      const t = s.from + span * ((i + 0.5) / PER_SIDE);
+      const t = from + span * ((i + 0.5) / PER_SIDE);
       for (const side of [-1, 1]) {
         const hx = s.axis === 'x' ? t : s.at + side * (XS.houseFront + XS.houseDepth / 2);
         const hz = s.axis === 'x' ? s.at + side * (XS.houseFront + XS.houseDepth / 2) : t;
         // where they stand when they come out: the kerb, on their own side
         const kx = s.axis === 'x' ? t : s.at + side * XS.kerb;
         const kz = s.axis === 'x' ? s.at + side * XS.kerb : t;
+        // ⚠️ and where a TRUCK stops to serve them — in the lane, not on the kerb. Aim a
+        // vehicle at the kerb point and it parks on the sidewalk, where surface drag
+        // stalls it. These are two different places and the map should say so.
+        const lx = s.axis === 'x' ? t : s.at + side * XS.laneOff;
+        const lz = s.axis === 'x' ? s.at + side * XS.laneOff : t;
         out.push({
           id: `${s.id}-${side < 0 ? 'n' : 's'}${i}`,
           block: s.id, side,
           x: hx, z: hz,        // the house itself
-          kx, kz,              // the kerb point out front
+          kx, kz,              // the kerb point out front — where they stand
+          lx, lz,              // the lane point — where the truck stops
           door: {              // the front door, where a person appears from
             x: hx - (s.axis === 'x' ? 0 : side * XS.houseDepth / 2),
             z: hz - (s.axis === 'x' ? side * XS.houseDepth / 2 : 0),
@@ -144,6 +158,29 @@ export function buildRects(houses) {
     };
   });
 }
+
+/**
+ * THE ROUTE — the loop, in the correct lane for each direction of travel.
+ *
+ * This is map data, not a test fixture: it is the skeleton of Cy's route sheet, and the
+ * policy bot drives it too. ⚠️ Waypoints must be DENSE ENOUGH that consecutive ones are
+ * connected by actual road. A route that jumps from the end of Maple straight to the
+ * middle of Sycamore aims the truck diagonally across the corner block, through somebody's
+ * front garden and into the side of their house — where it stays.
+ *
+ * Lane check, and get this wrong and you drive the whole route on the wrong side:
+ *   heading +x (east)  -> right = (0,+1) -> keep to z = +laneOff
+ *   heading +z (north) -> right = (-1,0) -> keep to x = at - laneOff
+ *   heading -x (west)  -> right = (0,-1) -> keep to z = at - laneOff
+ *   heading -z (south) -> right = (+1,0) -> keep to x = at + laneOff
+ */
+const _L = XS.laneOff;
+export const ROUTE = [
+  { x: -30, z: +_L }, { x: 20, z: +_L }, { x: 64, z: +_L },              // east along Maple
+  { x: 72 - _L, z: 20 }, { x: 72 - _L, z: 60 }, { x: 72 - _L, z: 84 },   // north up Sycamore
+  { x: 40, z: 88 - _L }, { x: -10, z: 88 - _L }, { x: -64, z: 88 - _L }, // west along Birch
+  { x: -72 + _L, z: 66 }, { x: -72 + _L, z: 28 }, { x: -72 + _L, z: 6 }, // south down Chestnut
+];
 
 /** The drivable bounds — a generous box around the loop, so you can't leave town. */
 export const BOUNDS = { x0: -96, x1: 96, z0: -24, z1: 112 };

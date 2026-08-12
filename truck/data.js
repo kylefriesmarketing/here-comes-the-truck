@@ -41,8 +41,15 @@ export const TRUCK = {
 
   // Company doctrine: "drive at a walking speed of three miles per hour when selling."
   sellSpeed: 1.35,     // m/s — under this you count as crawling a block properly
-  kerbDrag: 2.6,       // extra drag per second while any wheel is off the road
-  lawnDrag: 6.5,       // and considerably more while you're on somebody's grass
+
+  // ⚠️ SURFACE RESISTANCE IS MOSTLY SPEED-PROPORTIONAL, AND THE CONSTANT PART MUST STAY
+  // WELL UNDER `accel`. A first pass made these flat decelerations — kerb 2.6, lawn 6.5 —
+  // against an accel of 3.2. Grass was then a hole in the map: drive onto a verge and the
+  // truck can never leave it, at any throttle, forever. Speed-proportional drag slams your
+  // speed down hard (which is what a lawn should do) while always leaving you able to
+  // creep off it. The soak asserts this relationship; don't break it by raising a C.
+  kerbDragK: 1.2, kerbDragC: 0.50,   // a wheel up on the sidewalk
+  lawnDragK: 2.2, lawnDragC: 0.90,   // you are on somebody's grass and they can see you
 
   // ⚠️ THE MIRROR (bible §7). Nothing bad ever happens — the truck simply will not move.
   // Real law in NY/NJ/MI requires the front convex mirror; Detroit cut truck injuries

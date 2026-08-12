@@ -45,7 +45,9 @@ export class Game {
     this.noteMisses = opts.noteMisses || 0;
 
     this.stock = {};
-    for (const m of D.MENU) this.stock[m.key] = 20;
+    this.prices = {};
+    for (const m of D.MENU) { this.stock[m.key] = 20; this.prices[m.key] = m.price; }
+    if (opts.prices) Object.assign(this.prices, opts.prices);
 
     this.song = false;
     this.windowOpen = false;
@@ -163,10 +165,11 @@ export class Game {
 
     // deceleration: rolling + air + engine braking + whatever you're driving on
     const surf = HP.surfaceAt(tr.x, tr.z);
+    const av = Math.abs(tr.v);
     let dec = T.rollDrag + T.airDrag * tr.v * tr.v;
     if (th === 0) dec += T.engineBrake;
-    if (surf === 'walk') dec += T.kerbDrag;
-    else if (surf === 'lawn') dec += T.lawnDrag;
+    if (surf === 'walk') dec += T.kerbDragC + T.kerbDragK * av;
+    else if (surf === 'lawn') dec += T.lawnDragC + T.lawnDragK * av;
     if (input.brake > 0) dec += T.brake * clamp(input.brake, 0, 1);
     const drop = Math.min(Math.abs(tr.v), dec * dt);
     tr.v -= sgn(tr.v) * drop;
@@ -307,7 +310,9 @@ export class Game {
     const p = {
       id: ++this._pid, houseId: h.id, block: h.block, kid,
       x: h.door.x, z: h.door.z, state: 'walk', t: 0,
-      kx: h.kx, kz: h.kz,
+      kx: h.kx, kz: h.kz,          // where they stand
+      lx: h.lx, lz: h.lz,          // where a truck stops for them
+
       want: impossible ? null : want, said, tender,
       stage: 'ask',
     };
@@ -328,6 +333,19 @@ export class Game {
         if (this._moveTo(p, p.kx, p.kz, spd, dt)) { p.state = 'kerb'; p.t = 0; }
 
       } else if (p.state === 'kerb') {
+        // ⚠️ NOBODY LOITERS IN FRONT OF A TRUCK. A kid CROSSING your bumper blocks the
+        // mirror for a second or two — that is the ritual, and it must stay. But a person
+        // standing still there is a DEADLOCK: kerb points sit inside the blind zone, the
+        // queue caps at maxQueue so the overflow waits at their kerbs, and the truck can
+        // then never pull away again for the rest of the day. Anyone waiting steps aside.
+        if (tr.parked) {
+          const l = this.local(p.x, p.z);
+          const T = D.TRUCK, nose = T.len * 0.5;
+          if (l.fwd > nose - 0.4 && l.fwd < nose + T.mirrorAhead && Math.abs(l.lat) < T.mirrorHalfW + 0.6) {
+            const r = this.right(), s = l.lat >= 0 ? 1 : -1, step = C.walkSpeed * dt;
+            p.x += r.x * s * step; p.z += r.z * s * step;
+          }
+        }
         // Will they walk to the window? Only if you're parked, open, and close enough.
         const d = Math.hypot(wp.x - p.x, wp.z - p.z);
         if (canServe && d < C.willWalk && this.queueLen() < C.maxQueue) {
@@ -394,6 +412,17 @@ export class Game {
   }
 
   soft() { return this.cold < D.COLD.softAt; }
+
+  /**
+   * The price a customer will actually be asked, right now.
+   * ⚠️ ONE function. The sale reads it and the tag on the clipboard reads it, so the
+   * number on screen can never be a second model of the number being charged. MY BREW
+   * shipped an inverted progression curve precisely because those were two code paths.
+   */
+  priceOf(key) {
+    const base = this.prices[key] ?? D.MENU_BY_KEY[key].price;
+    return this.soft() ? Math.round(base * D.COLD.softPenalty) : base;
+  }
 
   // ---- actions — ONE dispatch, shared by the UI and the soak bot -----------
   act(name, arg) {
@@ -477,8 +506,7 @@ export class Game {
     // ⚠️ ONE formula. This is the same call the face at the window is drawn from —
     // the readout and the behaviour cannot drift.
     const ceiling = this.blocks[p.block].ceiling;
-    let price = item.price;
-    if (this.soft()) price = Math.round(price * D.COLD.softPenalty);
+    const price = this.priceOf(key);
 
     if (!D.willBuy(ceiling, price)) {
       this.stats.balked++;
@@ -566,6 +594,14 @@ export class Game {
     this.cb.served && this.cb.served(p, note);
   }
 
+  /** Set what you're charging. Price discovery by face is the loop this feeds. */
+  _act_price(arg) {
+    const { key, cents } = arg || {};
+    if (!D.MENU_BY_KEY[key]) return { ok: false, msg: 'no such item' };
+    this.prices[key] = Math.max(25, Math.round(cents / 25) * 25);   // to the nearest quarter
+    return { ok: true, price: this.prices[key] };
+  }
+
   _act_endDay() { this._endDay('called it'); return { ok: true }; }
 
   _endDay(why) {
@@ -607,7 +643,7 @@ export class Game {
       truck: { ...this.truck }, cold: this.cold, cash: this.cash, drawer: this.drawer,
       rep: this.rep, noiseHeat: this.noiseHeat, tickets: this.tickets,
       noteMisses: this.noteMisses, song: this.song, windowOpen: this.windowOpen,
-      stock: { ...this.stock }, pid: this._pid,
+      stock: { ...this.stock }, prices: { ...this.prices }, pid: this._pid,
       blocks: Object.fromEntries(Object.entries(this.blocks).map(([k, b]) => [k, b.annoy])),
       houses: this.houses.map(h => [h.heard, h.out ? 1 : 0, h.cool]),
       // copies, never the live arrays — an aliased snapshot restored in place iterates
@@ -627,6 +663,7 @@ export class Game {
     this.tickets = s.tickets; this.noteMisses = s.noteMisses;
     this.song = s.song; this.windowOpen = s.windowOpen;
     this.stock = { ...s.stock }; this._pid = s.pid;
+    if (s.prices) this.prices = { ...s.prices };
     for (const [k, a] of Object.entries(s.blocks)) if (this.blocks[k]) this.blocks[k].annoy = a;
     s.houses.forEach((h, i) => {
       if (!this.houses[i]) return;
@@ -661,10 +698,29 @@ export class Game {
 export function soakRun(seed, opts = {}) {
   const g = new Game({ seed, ...opts });
 
-  // personality, off the seeded stream
-  const songLove = g.rng();          // how much they lean on the jingle
-  const greed = g.rng();             // how often they short a kid
-  const patience = 0.4 + g.rng() * 0.5;
+  // ⚠️ THE BOT GETS ITS OWN RNG STREAM, deliberately separate from g.rng().
+  // The bot is not the sim. If its coin flips came off the sim's stream, then changing
+  // the bot's POLICY would change which customers came out and what they wanted — and a
+  // controlled trial that moves its own confounders measures nothing.
+  // ⚠️ Pre-hash the seed exactly like the sim's LCG does. Without it, seeds 1..10 all
+  // produced a near-identical FIRST draw — and since the first draw picked the bot's
+  // personality, ten consecutive seeds played the same way and all took $0.00.
+  let _bs = ((seed >>> 0) * 747796405 + 2891336453) >>> 0;
+  _bs = (Math.imul(_bs ^ (_bs >>> 15), 2246822519)) >>> 0;
+  const brng = () => { _bs = (_bs * 1664525 + 1013904223) >>> 0; return _bs / 4294967296; };
+  const bpick = (a) => a[Math.floor(brng() * a.length)];
+
+  // Personality, off the bot's stream. A policy pins any of it for a trial cell.
+  // ⚠️ `songLove` is EAGERNESS TO STOP, not whether to play at all. It used to gate the
+  // song itself, which meant a quarter of all seeds drove around in silence taking $0 —
+  // measuring a game nobody would ever play. The song is the game; it stays on.
+  const P = opts.policy || {};
+  const songLove = P.songLove !== undefined ? P.songLove : brng();
+  const greed = P.greed !== undefined ? P.greed : brng();
+  const patience = P.patience !== undefined ? P.patience : 0.4 + brng() * 0.5;
+  const alwaysRight = !!P.alwaysRight;      // pin out order-reading skill
+  // How many seconds of song a policy allows itself AFTER parking. 0 = obeys the law.
+  const songGrace = P.songGrace !== undefined ? P.songGrace : 0;
   const errors = [];
 
   const act = (n, a) => {
@@ -673,32 +729,54 @@ export function soakRun(seed, opts = {}) {
   };
 
   // The route: drive the loop, and divert to anybody standing at a kerb.
-  // ⚠️ Waypoints are in the correct LANE for the direction of travel — the bot drives on
-  // the right like everyone else, or the serving window ends up facing oncoming traffic.
+  // The waypoints are the map's own ROUTE — the same one Cy's route sheet is built on.
   let target = 0;
-  const L = HP.XS.laneOff;
-  const WP = [
-    { x: 62, z: +L },                                  // east along Maple
-    { x: HP.STREETS[3].at - L, z: 62 },                // north up Sycamore
-    { x: -62, z: 88 - L },                             // west along Birch
-    { x: HP.STREETS[2].at + L, z: 22 },                // south down Chestnut
-  ];
+  const WP = HP.ROUTE;
 
-  let guard = 0, lastT = -1, stopT = 0, stuckT = 0;
-  act('song', songLove > 0.25);
+  const divertR = 26 + songLove * 22;      // how far off the route they'll chase a sale
+  let guard = 0, lastT = -1, stopT = 0, stuckT = 0, sinceStop = 999, commit = null;
+  // What the BOT did, as opposed to what the sim did. Kept in the return because "the
+  // truck barely moved" is invisible in sim stats and cost several rounds to find.
+  const bot = { parks: 0, departs: 0, mirrorHeld: 0, stuckFrames: 0, parkedFrames: 0, laps: 0 };
+  act('song', true);
 
   while (!g.over && guard++ < 60000) {
     const tr = g.truck;
+    // ⚠️ A DISTANCE cooldown after each stop, not a time one. The song keeps pulling
+    // people out AROUND the truck, so there is always a fresh customer within range the
+    // moment a timer expires — the bot chain-diverts, works one cluster all afternoon and
+    // covers half a lap in a day. Making it drive a real distance first is what turns it
+    // back into a route driver.
+    if (!tr.parked) sinceStop += Math.abs(tr.v) * FIXED;
 
-    // --- pick a goal: the nearest waiting customer, else the next waypoint ---
+    // --- pick a goal: a customer AHEAD on the route, else the next waypoint ---
+    // ⚠️ Three things here are load-bearing, and each one was a bug first:
+    //  1. AHEAD (fwd > 3) — divert to whoever is NEAREST and, because the song spawns
+    //     customers around the truck, there is always somebody nearer than the next
+    //     corner. The bot shuffles between two houses and drives 57 m in a whole day.
+    //     Every other number looked healthy and the battery reported GREEN.
+    //  2. COMMIT — but "ahead" alone drops the customer the instant you close to within
+    //     3 m of them, so the goal flips back to the waypoint and the bot accelerates
+    //     past every single person. Nothing sold, all day, every seed.
+    //  3. The post-departure cooldown, so you actually leave the spot you just worked.
+    // A real route driver never turns back for one kid. That IS the route.
     let goal = null;
-    let bd = Infinity;
-    for (const p of g.people) {
-      if (p.state !== 'kerb') continue;
-      const d = Math.hypot(p.kx - tr.x, p.kz - tr.z);
-      if (d < bd) { bd = d; goal = { x: p.kx, z: p.kz, cust: true, d }; }
+    if (commit) {
+      const p = g.people.find(q => q.id === commit && q.state === 'kerb');
+      if (p) goal = { x: p.lx, z: p.lz, cust: true, d: Math.hypot(p.lx - tr.x, p.lz - tr.z) };
+      else commit = null;
     }
-    if (!goal || bd > 70) {
+    if (!goal && sinceStop > 55 && !tr.parked) {
+      let bd = Infinity, pick = null;
+      for (const p of g.people) {
+        if (p.state !== 'kerb') continue;
+        if (g.local(p.lx, p.lz).fwd < 3) continue;      // behind us. Keep going.
+        const d = Math.hypot(p.lx - tr.x, p.lz - tr.z);
+        if (d < divertR && d < bd) { bd = d; pick = p; }
+      }
+      if (pick) { commit = pick.id; goal = { x: pick.lx, z: pick.lz, cust: true, d: bd }; }
+    }
+    if (!goal) {
       const w = WP[target % WP.length];
       const d = Math.hypot(w.x - tr.x, w.z - tr.z);
       if (d < 10) { target++; }
@@ -711,48 +789,57 @@ export function soakRun(seed, opts = {}) {
     while (err > Math.PI) err -= 2 * Math.PI;
     while (err < -Math.PI) err += 2 * Math.PI;
 
-    const input = { throttle: 0.9, brake: 0, steer: clamp(err * 1.9, -1, 1) };
-    // ⚠️ Slow for the corner. A 6.3 m turning radius at 11 m/s puts you through a hedge —
-    // without this the bot plows every intersection and the battery measures a stuck truck.
-    input.throttle *= Math.max(0.22, 1 - Math.abs(err) / 1.05);
-    if (goal.cust) {
-      if (goal.d < 16) input.throttle *= 0.35;
-      if (goal.d < 8) { input.throttle = 0; input.brake = 1; }
-    }
+    // ⚠️ A SPEED CONTROLLER, not a throttle multiplier. Scaling throttle down for corners
+    // and approaches drove it below what rolling resistance demands (0.45 m/s^2 needs
+    // throttle >= 0.14) and the truck simply stalled in the street, at v=0.00, for the
+    // rest of the day — with every other stat looking plausible. Ask for a SPEED.
+    // ⚠️ Distance-PROPORTIONAL, not banded. Bands deadlock: the truck brakes to a halt at
+    // the edge of the "stop" band, lands just outside the park threshold, and sits there
+    // at v=0.00 for the rest of the day with want stuck at 0. It must creep the last few
+    // metres, so the target speed has to go smoothly to zero AT the goal, not before it.
+    let want = goal.cust ? clamp(goal.d * 0.4 - 0.6, 0, 6.5) : 9.0;
+    want *= Math.max(0.28, 1 - Math.abs(err) / 1.15);   // and slow for the corner
+    const input = { throttle: 0, brake: 0, steer: clamp(err * 1.9, -1, 1) };
+    if (tr.v < want - 0.15) input.throttle = 0.95;
+    else if (tr.v > want + 0.15) input.brake = clamp((tr.v - want) * 0.6, 0.15, 1);
 
     if (tr.parked) {
       input.throttle = 0; input.brake = 0;
       stopT += FIXED;
       if (!g.windowOpen) act('window', true);
+      // The law says silence the instant you're stationary — but every stop is a gamble:
+      // a few more seconds of song pulls another kid off the next block. songGrace is
+      // exactly how many seconds of that bribe this policy takes.
+      if (g.song && stopT >= songGrace) act('song', false);
       const p = g.serving;
       if (p) {
         if (p.stage === 'ask') {
           // sometimes hand over the wrong thing — the order was in kid
-          const key = (p.want && g.rng() > 0.22) ? p.want : g.pick(D.MENU).key;
+          const key = (p.want && (alwaysRight || brng() > 0.22)) ? p.want : bpick(D.MENU).key;
           const r = act('serve', key);
           if (!r.ok && (r.impossible || r.balked)) { p.state = 'leaving'; g.serving = null; }
         } else if (p.stage === 'pay') {
           const due = D.changeDue(p.tender, p.price);
-          act('change', greed > 0.8 && g.rng() > 0.6 ? Math.max(0, due - 25) : due);
+          act('change', greed > 0.8 && brng() > 0.6 ? Math.max(0, due - 25) : due);
         } else if (p.stage === 'short') {
-          act(g.rng() < 0.62 ? 'mercy' : 'refuse');
+          act(brng() < 0.62 ? 'mercy' : 'refuse');
         }
       } else if (stopT > 18 + patience * 40 || (g.queueLen() === 0 && stopT > 12)) {
         act('window', false);
-        if (act('depart').ok) { act('song', songLove > 0.25); stopT = 0; }
+        if (act('depart').ok) { act('song', true); stopT = 0; sinceStop = 0; commit = null; bot.departs++; }
+        else bot.mirrorHeld++;
         // else: the mirror is holding it. Wait for them to move. Nothing bad happens.
       }
     } else {
-      if (goal.cust && goal.d < 9 && Math.abs(tr.v) < 0.55) {
-        act('song', false);            // the law says silence the instant you stop
-        act('park'); stopT = 0;
-      }
+      if (goal.cust && goal.d < 5 && Math.abs(tr.v) < 0.6) { act('park'); stopT = 0; commit = null; bot.parks++; }
       // stuck against a hedge? back out and try the next leg.
-      if (Math.abs(tr.v) < 0.4) stuckT += FIXED; else stuckT = 0;
+      if (Math.abs(tr.v) < 0.4) { stuckT += FIXED; bot.stuckFrames++; } else stuckT = 0;
       if (stuckT > 1.6) { input.throttle = -1; input.brake = 0; input.steer = -input.steer; }
       if (stuckT > 4.0) { stuckT = 0; target++; }
     }
 
+    if (tr.parked) bot.parkedFrames++;
+    bot.laps = target;
     g.step(FIXED, input);
 
     // invariants, checked every single loop
@@ -765,5 +852,5 @@ export function soakRun(seed, opts = {}) {
   }
 
   if (!g.over) errors.push(`day never ended (guard=${guard})`);
-  return { seed, ...g.summary(), stats: g.stats, hash: g.stateHash(), errors, frames: g.frame };
+  return { seed, ...g.summary(), stats: g.stats, bot, hash: g.stateHash(), errors, frames: g.frame };
 }
