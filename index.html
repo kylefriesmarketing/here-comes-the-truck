@@ -105,6 +105,14 @@ button{font-family:var(--ui-serif);cursor:pointer;border:0}
 #clipsheet .pr button{background:var(--paper2);padding:.1rem .5rem;border-radius:2px;font-size:.86rem}
 #clipsheet .pr button:hover{background:#fff}
 #clipsheet .note{font-size:.86rem;line-height:1.6;opacity:.75;margin-top:.4rem}
+#clipsheet .sub2{display:block;font-size:.74rem;opacity:.5;font-style:italic}
+#clipsheet .dim{opacity:.35}
+#clipsheet td button[data-buy]{background:var(--gold);padding:.18rem .6rem;border-radius:2px;font-size:.86rem}
+#clipsheet td button[data-buy]:hover{filter:brightness(1.08)}
+/* cy's handwriting, on the back of the sheet */
+#clipsheet .cy{font-family:'Segoe Script','Bradley Hand',cursive;color:var(--pencil);
+  font-size:.9rem;line-height:1.5;margin:.4rem 0 .6rem;padding-left:.6rem;
+  border-left:2px solid rgba(192,57,43,.3);opacity:.85}
 
 /* ---------- end of day ---------- */
 #dayend{position:fixed;inset:0;z-index:58;background:#0009;display:flex;
@@ -120,6 +128,7 @@ button{font-family:var(--ui-serif);cursor:pointer;border:0}
 /* THE LOOP ENDS ON A PERSON, NOT A NUMBER. */
 #reply{font-size:1.02rem;line-height:1.6;font-style:italic;opacity:.85;
   border-left:3px solid var(--pencil);padding:.2rem 0 .2rem .9rem;margin-bottom:1.3rem}
+#reply .who{font-style:normal;font-size:.74rem;letter-spacing:.12em;opacity:.5;margin-top:.5rem}
 #endcard .foot{font-size:.72rem;opacity:.4;letter-spacing:.12em;margin-top:1rem;text-align:center}
 </style>
 </head>

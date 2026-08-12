@@ -8,7 +8,30 @@
 
 ---
 
-## Status — Phase 0, the graybox slice · 2026-08-11
+## Status — Phase 1, a reason to come back · 2026-08-11
+
+On top of Phase 0: **six truck upgrades** bought from the clipboard on the dash (the
+second cold plate measures **+1.3 h of afternoon and +23% takings** — the kill-gate's
+"afford a better freezer" pays) · **five named regulars** from the bible with four strings
+each, so the day ends on somebody's name · **Cy's route sheet** in his handwriting on the
+back of the clipboard · multi-day carry of cash, standing, prices, upgrades and who has
+met you · and a third trial that guards the progression curve.
+
+**Kyle's playtest fixes (same day):** the steering was **inverted** — a real bug, now
+asserted against world space, not against the bot's own convention. Plus the whole visual
+pass below.
+
+### The visual pass
+A generated texture kit (`truck/tex.js`): grass with mown stripes and clover, patched
+asphalt, scored concrete, clapboard siding, brick, asphalt shingle, and **faces**.
+Houses now roll footprint, storeys, siding-vs-brick, roof pitch and colour, a window grid
+with frames and sills that light up at dusk, a door with a step, a porch, a chimney, a
+driveway with a car, hedges, trees, flowers and a mailbox. People have faces (eyes with
+highlights, brows, cheeks, a mouth that differs kid-to-adult), hair, hands and shoes.
+Real shadows, a shadow camera that follows the truck, and the windscreen is a **frame**
+rather than a tinted pane.
+
+## Phase 0 — the graybox slice
 
 The spine, built to answer one falsifiable question before any content exists:
 
@@ -171,6 +194,52 @@ Kept because a green test suite is not a working game, and three of these ran fu
     The two axle probes sit at different depths and each picking its own nearest wall
     pushes them opposite ways. (Inherited from FRESH CUT's README v1.10; also: never
     approximate a building with circles, they bulge ~2 m past the ends.)
+
+### Phase 1 — found by playtest and by the battery
+23. **⚠️⚠️ THE STEERING SHIPPED INVERTED, and only a human caught it.** Every automated
+    number looked perfect because the policy bot steers by its own convention — it was
+    *self-consistently wrong*. `D` must turn right, and right is `(-cos yaw, sin yaw)`,
+    which is reached by **decreasing** yaw. The soak now asserts against WORLD SPACE
+    (from yaw 0, pressing D must send x negative). Never test a convention against
+    something that shares the convention.
+24. **Every roof in town rendered pure black, for TWO independent reasons**, and fixing
+    either one alone left it black: the hand-built gable had its **winding** backwards
+    (normals pointing down and inward) *and* had **no `uv` attribute at all**, so a
+    mapped material sampled undefined coordinates. If a custom BufferGeometry renders
+    black, check both — `geometry.attributes.uv` being undefined is the one people miss.
+25. **The hair cap swallowed every face.** `SphereGeometry` with `thetaLength 0.62π`
+    sweeps 112° from the top pole — past the equator — so it wrapped straight over the
+    face plane. Faces were built, correct, and invisible. 0.45π.
+26. **People at the window presented the back of their heads.** `p.face` is set by
+    `_moveTo` and goes stale the instant somebody stops, and queue slots are *beside* the
+    truck — so the one camera meant to see their faces never did. They now look at you.
+27. **Faces go on a PLANE parked on the front of the head, never wrapped onto the sphere.**
+    Sphere UVs put u=0.25 at +Z, not u=0.5, so a wrapped face lands on the ear.
+28. **Roof colours must be lighter than they look in a swatch** — the shingle texture lays
+    a 28%-black line under every course.
+29. **Don't box the cab in.** A modelled floor, ceiling and door wall was tried: at 0.5 m
+    from the eye the wall alone eats a third of the frame and the windscreen becomes a
+    letterbox. Pillars + header + dash are enough. Also size A-pillars and the mirror by
+    the **angle they subtend from the driver's eye**, not by what looks right in the model.
+30. **Three of five named regulars went unmet across 24 days**, for three stacked reasons:
+    the serving window is always on the truck's right and the loop is one-way, so the far
+    side of every street is structurally under-served (13–16 come-outs, **zero** serves,
+    vs 16/16 for one on the near side); the bot's post-stop cooldown phase-locked it onto
+    every other house; and that cooldown made it drive past everyone who came out *while
+    it was parked*. Regulars now live on the kerb side, and the assertion was rewritten
+    from "the bot's route reaches them" (which tests the bot) to **"every regular is
+    servable at their own door"** (which tests the game).
+31. **Marge could never buy her own usual** — a $3.50 cone on a $3.00 street. A regular
+    now never balks at their usual, which is what loyalty IS and is the mechanical reason
+    "they know your name" is worth money.
+32. **Two upgrades measured at exactly 0%.** `speedMul` bought nothing because the day is
+    limited by cold, not distance; `stockAdd` bought nothing because you started with more
+    of every line than you could sell. Dead money is the same bug as an inverted curve —
+    Trial C exists to catch it, and base stock is now tight enough to run dry.
+33. **Assert on the low-variance side.** Trial B's *cost* (annoy, heat) is near
+    deterministic; its *benefit* arrives through takings whose spread is 54–101% of the
+    mean, so at n=6 it is simply not resolvable. The trial now says so out loud instead
+    of being bent until it passes.
 
 ### The view
 15. **A hidden Browser-pane tab suspends rAF**, so `draw()` never runs, the camera is never

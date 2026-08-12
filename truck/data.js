@@ -243,24 +243,145 @@ export const LAW = {
 };
 
 // ---------------------------------------------------------------------------
+// THE TRUCK, IMPROVED (bible §19 invariant 8: the first meaningful upgrade must land
+// inside 45 minutes — Death Stranding's first real upgrade arrives at hour seven and it
+// is the most-cited flaw in an otherwise beloved game).
+//
+// The freezer is FIRST and cheapest on purpose: "afford a better freezer" is the literal
+// last beat of the kill-gate sentence, so it has to be reachable on day two or three.
+// ---------------------------------------------------------------------------
+export const UPGRADES = [
+  { key: 'plates', name: 'a second cold plate', cost: 6500, sub: 'the box holds the afternoon instead of losing it',
+    mod: { coldMul: 0.76 } },
+  { key: 'horn', name: 'the good speaker horn', cost: 5200, sub: 'they hear you a street earlier',
+    mod: { radiusMul: 1.28 } },
+  { key: 'hatch', name: 'the wide hatch', cost: 8000, sub: 'you can work two of them at once',
+    mod: { queueAdd: 2, serveMul: 0.82 } },
+  // ⚠️ speedMul ALONE measured at exactly 0% — the day is limited by COLD, not by
+  // distance, so going faster buys you nothing you can sell. A cooler engine bay under
+  // the box is the real reason to pay a mechanic, and it's physically why these trucks
+  // idle badly in August. Never ship an upgrade the trial can't distinguish from nothing.
+  { key: 'engine', name: 'a look at the engine', cost: 7000, sub: 'cy knows a man. the man is not cheap',
+    mod: { speedMul: 1.18, coldMul: 0.93 } },
+  { key: 'board', name: 'a proper menu board', cost: 4500, sub: 'nobody argues with a price that is painted on',
+    mod: { ceilingAdd: 45 } },
+  // ⚠️ stockAdd alone also measured 0%, because you started the day with more of every
+  // item than you could possibly sell — so "more room" was room you never used. Base
+  // stock is now tight enough that the popular lines actually run dry, which is what
+  // makes a bigger box worth money AND what makes loading it a decision.
+  { key: 'chest', name: 'the deep chest', cost: 9500, sub: 'more of everything, and it all has to sell',
+    mod: { stockAdd: 9, coldMul: 0.95 } },
+];
+export const UPGRADE_BY_KEY = Object.fromEntries(UPGRADES.map(u => [u.key, u]));
+
+/** ⚠️ ONE function. The sim's behaviour and the clipboard's blurb both read this, so a
+ *  bought upgrade can never say one thing and do another. */
+export function mods(owned) {
+  const m = { coldMul: 1, radiusMul: 1, queueAdd: 0, serveMul: 1, speedMul: 1, ceilingAdd: 0, stockAdd: 0 };
+  for (const u of UPGRADES) {
+    if (!owned || !owned[u.key]) continue;
+    for (const k in u.mod) m[k] = (k.endsWith('Mul')) ? m[k] * u.mod[k] : m[k] + u.mod[k];
+  }
+  return m;
+}
+
+// ---------------------------------------------------------------------------
+// THE REGULARS — the emotional core (bible §9). Four strings each, the FRESH CUT
+// architecture that makes forty people memorable, transposed.
+//   arrive — what they say when you pull up
+//   mid    — one line during the summer, once
+//   reply  — the last thing you read at the end of a day
+//   payoff — the day you finally do the specific thing that matters to them
+// ⚠️ P3: THE LOOP ENDS ON A PERSON, NOT A NUMBER. The day-end card reads a reply.
+// ---------------------------------------------------------------------------
+export const REGULARS = [
+  {
+    id: 'bell', who: 'MR BELL', house: 'chestnut-s2', kid: false, wants: 'scoop', buysTwo: true,
+    arrive: 'two, please. the same as always.',
+    mid: 'she liked the orange ones. i don\'t, particularly.',
+    reply: 'mr bell put the second one on the wall by the gate. it was gone by morning. it always is.',
+    payoff: 'he said thank you by name today. yours, not hers. that took all summer.',
+  },
+  {
+    id: 'marge', who: 'MARGE', house: 'maple-s1', kid: false, wants: 'cone',
+    arrive: "you're too thin. are you eating properly?",
+    mid: "i've got peonies coming. don't let me forget.",
+    reply: 'marge waved from the porch with the light already off, which is how you know she watched you go.',
+    payoff: 'there was a foil parcel on the sill of your window. you did not see her put it there.',
+  },
+  {
+    id: 'kowalskis', who: 'THE KOWALSKI KIDS', house: 'maple-s3', kid: true, wants: 'eyes', alwaysShort: 20,
+    arrive: "we've got— hang on. we've got—",
+    mid: 'the little one has been saving. he wants you to know he has been saving.',
+    reply: 'the kowalski kids were twenty cents short again. they will be tomorrow, too.',
+    payoff: 'they had it. all of it, in a sock, counted twice. they made you count it as well.',
+  },
+  {
+    id: 'whitfield', who: 'COACH WHITFIELD', house: 'birch-n2', kid: false, wants: 'pop', buysBench: true,
+    arrive: "we won. twelve of them. what've you got that's cheap.",
+    mid: 'lines. that\'s all it is. you hold your line and the rest sorts itself.',
+    reply: "you can hear the score from two streets away by whether coach is out on the kerb.",
+    payoff: 'he introduced you to the bench by name. all twelve of them shook your hand. it took a while.',
+  },
+  {
+    id: 'cy', who: 'CY', house: 'maple-s5', kid: false, wants: 'bomb', exactAlways: true,
+    arrive: "you're driving too fast. not for the road. for the job.",
+    mid: "kowalski kids only got quarters after four. before four they got nothing and they'll stand there anyway.",
+    reply: 'cy paid with exact change, the way he has for thirty-one years, and did not say how you did.',
+    payoff: 'cy did not correct you today. he asked how it went, and then he waited for the answer.',
+  },
+];
+export const REGULAR_BY_HOUSE = Object.fromEntries(REGULARS.map(r => [r.house, r]));
+
+// ⚠️ EVERY REGULAR LIVES ON THE KERB SIDE OF THE ROUTE'S DIRECTION OF TRAVEL. The serving
+// window is always on the truck's right, and the loop is one-way, so the far side of each
+// street is structurally under-served — measured: a regular on the wrong side came out
+// 13-16 times across 8 days and was served ZERO times, while one on the near side was
+// served 16 out of 16. That is realistic (you work one side, then come back), and it is
+// exactly what Cy's route sheet is FOR — but it means regular placement is not free.
+// Kerb side by street: maple 's' · sycamore 'n' · birch 'n' · chestnut 's'.
+
+// ⚠️ A REGULAR IS NOT A RANDOM HOUSE. They are listening for you, so they come out on
+// half the song a stranger needs, and they will wait twice as long once they're out.
+// Without this the battery measured 3 of 5 named regulars going UNMET across 24 days —
+// only ~30% of the people who come out ever get served, and five specific doors out of
+// forty-eight is a thin lottery. The emotional core cannot be left to chance.
+export const REGULAR = {
+  heardMul: 0.5,        // they hear you a street earlier than anyone else
+  patienceMul: 2.2,     // and they'll stand there
+  payoffAt: 5,          // visits before their payoff line replaces their usual reply
+};
+
+// CY'S ROUTE SHEET (bible §8) — one line of somebody else's handwriting per block, doing
+// three jobs at once: characterising him, teaching the technique, previewing the level.
+export const ROUTE_SHEET = {
+  maple: "maple's the whole job. work it slow, don't lean on the song at the top end — the man at number four sleeps days.",
+  birch: "birch tops out at two-fifty and always has. sell there for the goodwill, not the money.",
+  chestnut: 'chestnut you drive, you do not park. nobody comes out and the corner is a ticket waiting to happen.',
+  sycamore: "sycamore's the money. they'll pay what you ask and they won't remember you for it.",
+};
+
+// ---------------------------------------------------------------------------
 // THE SHARED FORMULAS — the "one function" rule.
 // The sim reads these. The UI reads these. They cannot drift.
 // ---------------------------------------------------------------------------
 
-/** How well a house at distance d hears the song. 0 = not at all, 1 = point blank. */
-export function hearAt(d) {
-  if (d >= JINGLE.radius) return 0;
-  const f = 1 - d / JINGLE.radius;
-  return Math.pow(f, JINGLE.falloffPow);
+/** How well a house at distance d hears the song. 0 = not at all, 1 = point blank.
+ *  `radius` comes from JINGLE.radius x the speaker upgrade — pass the EFFECTIVE one. */
+export function hearAt(d, radius = JINGLE.radius) {
+  if (d >= radius) return 0;
+  return Math.pow(1 - d / radius, JINGLE.falloffPow);
 }
 
-/** Cold drained this second, given the day's state. Read by the sim AND the gauge. */
+/** Cold drained this second, given the day's state. Read by the sim AND the gauge.
+ *  `st.coldMul` is the freezer upgrade — the whole drain scales, which is why a second
+ *  cold plate buys you AFTERNOON rather than a bigger number on a bar. */
 export function coldDrain(st) {
   let r = COLD.drainBase;
   if (st.windowOpen) r += COLD.drainWindow;
   if (st.moving) r += COLD.drainMoving;
   r += COLD.drainHeat * (st.heat || 0);
-  return Math.max(0, r);
+  return Math.max(0, r) * (st.coldMul === undefined ? 1 : st.coldMul);
 }
 
 /**

@@ -39,7 +39,9 @@ export class UI {
     $('clip').onclick = (e) => { if (e.target.id === 'clip') this.clipboard(false); };
     $('clipsheet').onclick = (e) => {
       const b = e.target.closest('button');
-      if (b && b.dataset.pkey) this.h.price(b.dataset.pkey, parseInt(b.dataset.d, 10));
+      if (!b) return;
+      if (b.dataset.pkey) this.h.price(b.dataset.pkey, parseInt(b.dataset.d, 10));
+      if (b.dataset.buy) this.h.buy(b.dataset.buy);
     };
   }
 
@@ -97,10 +99,11 @@ export class UI {
     if (p.stage === 'ask') {
       show($('pay'), false); show($('menu'), true);
       $('said').textContent = '“' + p.said + '”';
-      $('whosaid').textContent = (p.kid ? 'a kid' : 'a grown-up') +
-        (p.wrongs ? ' · they are being patient about it' : '') +
-        (p.want === null ? '' : '');
-      const ceiling = g.blocks[p.block].ceiling;
+      // ⚠️ THEY KNOW YOUR NAME, so you get to know theirs. A regular is never "a kid".
+      $('whosaid').textContent = (p.who || (p.kid ? 'a kid' : 'a grown-up')) +
+        (p.qty > 1 ? ' · two of them, the same as always' : '') +
+        (p.wrongs ? ' · they are being patient about it' : '');
+      const ceiling = g.ceilingOf(p.block);
       $('menu').innerHTML = D.MENU.map((m, i) => {
         const price = g.priceOf(m.key);
         const out = (g.stock[m.key] || 0) <= 0;
@@ -158,17 +161,44 @@ export class UI {
     }).join('');
 
     const blocks = Object.values(g.blocks).map(b =>
-      `<tr><td>${b.id} st</td><td class="r">they'll pay up to ${money(b.ceiling)}</td>
+      `<tr><td>${b.id} st</td><td class="r">they'll pay up to ${money(g.ceilingOf(b.id))}</td>
        <td class="r">${b.annoy >= D.JINGLE.annoyCold ? 'gone cold on you'
         : b.annoy >= D.JINGLE.annoyWarn ? 'getting tired of it' : 'fine'}</td></tr>`).join('');
+
+    // CY'S ROUTE SHEET — somebody else's handwriting, doing three jobs at once.
+    const sheet = Object.entries(D.ROUTE_SHEET)
+      .map(([k, t]) => `<div class="cy">${t}</div>`).join('');
+
+    // THE DEPOT. On the dash, because the truck is the interface — no shop screen.
+    const purse = g.cash + g.drawer;
+    const shop = D.UPGRADES.map(u => {
+      const have = !!g.owned[u.key];
+      const can = purse >= u.cost;
+      return `<tr><td>${have ? '✓ ' : ''}${u.name}<span class="sub2">${u.sub}</span></td>
+        <td class="r">${have ? 'on the truck' : can
+          ? `<button data-buy="${u.key}">${money(u.cost)}</button>`
+          : `<span class="dim">${money(u.cost)}</span>`}</td></tr>`;
+    }).join('');
+
+    // who you know so far
+    const folk = D.REGULARS.map(r => {
+      const n = g.met[r.id] || 0;
+      return `<tr><td>${n ? r.who : '—'}</td><td class="r">${n ? `${n} time${n === 1 ? '' : 's'}` : 'not yet'}</td></tr>`;
+    }).join('');
 
     $('clipsheet').innerHTML = `
       <h2>the clipboard</h2>
       <div class="sub">cy's, originally. his handwriting is still on the back.</div>
       <h3>what's in the box</h3>
       <table>${rows}</table>
+      <h3>the depot</h3>
+      <table>${shop}</table>
       <h3>the street</h3>
       <table>${blocks}</table>
+      <h3>in cy's hand, on the back</h3>
+      ${sheet}
+      <h3>who's come out</h3>
+      <table>${folk}</table>
       <h3>the note</h3>
       <div class="note">
         ${money(D.ECON.noteAmount)} to the bank every ${D.ECON.noteEveryDays} days.
@@ -185,12 +215,19 @@ export class UI {
     const why = s.why === 'cold' ? 'the box is empty and the last of it is soup'
       : s.why === 'dusk' ? 'the streetlights came on'
         : 'you called it';
-    const reply =
-      s.mercy > 0 ? '“my mom says thank you for the other day.”'
+    // ⚠️ THE LOOP ENDS ON A PERSON, NOT A NUMBER. If you met a regular today, the last
+    // thing you read is theirs — and the day you finally do the thing that matters to
+    // them, it's the payoff line instead.
+    const reg = s.lastRegular ? D.REGULARS.find(r => r.id === s.lastRegular) : null;
+    const timesMet = reg ? (s.met[reg.id] || 0) : 0;
+    const reply = reg
+      ? (timesMet >= D.REGULAR.payoffAt ? reg.payoff : reg.reply)
+      : s.mercy > 0 ? '“my mom says thank you for the other day.”'
         : s.shorted > 0 ? 'somebody counted their change twice tonight, on a porch, in the dark.'
           : s.served === 0 ? 'nobody came out. the song went up and down maple and nobody came out.'
             : s.served > 20 ? '“same time tomorrow?” — the kid with the bike, who did not wait for an answer.'
               : '“you\'re the new one,” she said. it wasn\'t a question.';
+    const who = reg ? `<div class="who">— ${reg.who}</div>` : '';
 
     $('endcard').innerHTML = `
       <h2>day ${s.day}</h2>
@@ -208,10 +245,24 @@ export class UI {
         the note was due. ${s.notePaid
         ? `paid. ${money(D.ECON.noteAmount)} gone, and it didn't hurt as much as last time.`
         : `<b>you couldn't make it.</b> that's ${s.noteMisses} of ${D.ECON.noteGraceMisses}.`}</div>` : ''}
-      <div id="reply">${reply}</div>
+      <div id="reply">${reply}${who}</div>
+      ${this._depotNudge(g)}
       <button class="big" id="nextday" style="width:100%">put it away for tonight</button>
       <div class="foot">a DIRTY BOY DEVS game</div>`;
     show($('dayend'), true);
     $('nextday').onclick = () => this.h.nextDay();
+  }
+
+  /** The first thing you can afford, named on the card. Invariant 8: the first meaningful
+   *  upgrade has to land inside 45 minutes, and it can't do that if nobody tells you. */
+  _depotNudge(g) {
+    const purse = g.cash;
+    const next = D.UPGRADES.filter(u => !g.owned[u.key]).sort((a, b) => a.cost - b.cost)[0];
+    if (!next) return '';
+    return purse >= next.cost
+      ? `<div class="note" style="margin-bottom:1rem">you can afford <b>${next.name}</b> —
+         ${money(next.cost)}. it's on the clipboard, on the dash. <i>${next.sub}.</i></div>`
+      : `<div class="note" style="margin-bottom:1rem;opacity:.5">${next.name} is
+         ${money(next.cost - purse)} away.</div>`;
   }
 }

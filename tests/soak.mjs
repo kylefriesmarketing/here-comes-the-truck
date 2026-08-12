@@ -75,6 +75,17 @@ if (broke.length) bad(`${broke.length} day(s) took $0.00 (seeds ${broke.map(r =>
 // The moral engine has to actually fire, or it's decoration.
 if (avg(r => r.mercy) < 0.15) bad(`the kid-is-short case never fires (avg mercy ${avg(r => r.mercy).toFixed(2)})`);
 
+// P3 — THEY KNOW YOUR NAME. The day must be able to end on a person.
+// ⚠️ This is a CAPABILITY assertion (every named regular can be served — tested
+// deterministically below) plus a COVERAGE readout (how many the bot's particular route
+// happens to reach, which is informational). Asserting on coverage was wrong: the bot
+// completes barely one lap a day, so blocks three and four are rarely visited at all,
+// and a perfectly servable regular living on Chestnut failed a test about the ROUTE.
+const metAny = runs.filter(r => r.metToday.length).length;
+const namesSeen = new Set(runs.flatMap(r => r.metToday));
+console.log(`regulars:        met on ${metAny}/${runs.length} days · the bot's route reaches ${namesSeen.size}/${D.REGULARS.length}`);
+if (metAny < runs.length * 0.5) bad(`only ${metAny}/${runs.length} days met a single named regular — the loop cannot end on a person (pillar P3)`);
+
 // ---- determinism -----------------------------------------------------------
 const a = soakRun(999), b = soakRun(999);
 const detOk = a.hash === b.hash && a.took === b.took && a.served === b.served;
@@ -106,6 +117,18 @@ if (c.hash === a.hash) bad(`seeds 999 and 1000 produced identical runs — the s
 // ---- unit checks on a fresh Game -------------------------------------------
 {
   const g = new Game({ seed: 3 });
+
+  // ⚠️⚠️ D TURNS RIGHT. This shipped inverted and only a human playing it caught it —
+  // every automated number looked perfect because the bot steers by its own convention,
+  // so it was self-consistently wrong. Assert against WORLD SPACE, not against the bot.
+  // From yaw 0 the truck faces +z; steering right must send x NEGATIVE.
+  {
+    const s = new Game({ seed: 2 });
+    s.truck.x = 0; s.truck.z = 0; s.truck.yaw = 0; s.truck.v = 0;
+    for (let i = 0; i < 60 * 4; i++) s.step(FIXED, { throttle: 1, steer: 1 });
+    console.log(`steering:        D from yaw 0 -> x ${s.truck.x.toFixed(2)} (must be negative = right)`);
+    if (s.truck.x > -0.5) bad(`STEERING IS INVERTED — pressing D from yaw 0 moved x to ${s.truck.x.toFixed(2)}; right is -x`);
+  }
 
   // the truck cannot turn while stopped — the bicycle model, not a tank
   const yaw0 = g.truck.yaw;
@@ -216,6 +239,35 @@ if (c.hash === a.hash) bad(`seeds 999 and 1000 produced identical runs — the s
   if (worst < D.JINGLE.annoyCold) bad(`5 min of parked song only reached annoy ${worst.toFixed(2)} — a block can never go cold`);
   if (g.noiseHeat <= 0) bad(`parked with the song running accrued no noise heat`);
   console.log(`annoyed:         5 min parked & playing -> annoy ${worst.toFixed(2)}, heat ${g.noiseHeat.toFixed(1)}`);
+}
+
+{
+  // ⚠️ EVERY NAMED REGULAR MUST BE SERVABLE. Park at their door, play the song, open the
+  // window, serve them — and get their name, their line and their quirk back. This is the
+  // emotional core; if one of them is unreachable the game quietly loses a character.
+  const missed = [];
+  for (const r of D.REGULARS) {
+    const h = HP.buildHouses().find(x => x.id === r.house);
+    if (!h) { missed.push(`${r.id} (no house "${r.house}")`); continue; }
+    const st = HP.STREETS.find(s => s.id === h.block);
+    const g = new Game({ seed: 31 });
+    g.truck.x = h.lx; g.truck.z = h.lz; g.truck.v = 0;
+    g.truck.yaw = st.axis === 'x' ? (h.side < 0 ? -Math.PI / 2 : Math.PI / 2) : (h.side < 0 ? Math.PI : 0);
+    g.act('song', true);
+    for (let i = 0; i < 60 * 45 && !g.people.some(p => p.reg === r.id); i++) g.step(FIXED, {});
+    g.act('song', false); g.act('park'); g.act('window', true);
+    for (let i = 0; i < 60 * 150 && !(g.met[r.id] > 0); i++) {
+      g.step(FIXED, {});
+      const p = g.serving;
+      if (!p) continue;
+      if (p.stage === 'ask') { const res = g.act('serve', p.want || 'pop'); if (!res.ok) { p.state = 'leaving'; g.serving = null; } }
+      else if (p.stage === 'pay') g.act('change', D.changeDue(p.tender, p.price));
+      else if (p.stage === 'short') g.act('mercy');
+    }
+    if (!(g.met[r.id] > 0)) missed.push(r.id);
+  }
+  console.log(`every regular:   ${D.REGULARS.length - missed.length}/${D.REGULARS.length} servable at their own door`);
+  if (missed.length) bad(`UNSERVABLE regular(s): ${missed.join(', ')} — a named character cannot be reached at all`);
 }
 
 // ---- verdict ---------------------------------------------------------------

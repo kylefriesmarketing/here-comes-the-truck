@@ -44,10 +44,21 @@ export class Game {
     this.tickets = opts.tickets || 0;
     this.noteMisses = opts.noteMisses || 0;
 
+    // what you own, and the single bag of modifiers it produces
+    this.owned = { ...(opts.owned || {}) };
+    this.mod = D.mods(this.owned);
+
     this.stock = {};
     this.prices = {};
-    for (const m of D.MENU) { this.stock[m.key] = 20; this.prices[m.key] = m.price; }
+    // ⚠️ 11, not 20. At 20 of every line you could never run out, so the deep chest was
+    // dead money and "we're out of that" never happened to anybody.
+    for (const m of D.MENU) { this.stock[m.key] = 11 + this.mod.stockAdd; this.prices[m.key] = m.price; }
     if (opts.prices) Object.assign(this.prices, opts.prices);
+
+    // Who has met you, and who has already said their one mid-summer line.
+    this.met = { ...(opts.met || {}) };
+    this.saidMid = { ...(opts.saidMid || {}) };
+    this.metToday = [];
 
     this.song = false;
     this.windowOpen = false;
@@ -151,16 +162,23 @@ export class Game {
     const T = D.TRUCK, tr = this.truck;
 
     // The wheel turns toward your input at a real rate — it does not teleport.
-    const want = clamp(input.steer || 0, -1, 1) * T.maxSteer;
+    // ⚠️⚠️ THE MINUS SIGN IS THE WHOLE THING. `D` / steer = +1 must turn RIGHT, and right
+    // is (-cos yaw, sin yaw), which is reached by DECREASING yaw. Without this negation
+    // the truck steers backwards — it drove that way for a whole build and it is the same
+    // family of bug as FRESH CUT's A/D inversion, which also survived a full version.
+    // Verify by hand, never by feel: from yaw 0 the truck faces +z; press D and x must go
+    // NEGATIVE.
+    const want = -clamp(input.steer || 0, -1, 1) * T.maxSteer;
     const rate = Math.abs(want) > Math.abs(tr.steer) ? T.steerRate : T.steerReturn;
     tr.steer += clamp(want - tr.steer, -rate * dt, rate * dt);
 
     if (tr.parked) { tr.v = 0; return; }
 
     const th = clamp(input.throttle || 0, -1, 1);
+    const top = this.topSpeed();
     if (th > 0) {
       // accel tails off as you approach top speed, so it never snaps to the cap
-      const f = clamp(1 - Math.max(0, (tr.v / T.topSpeed - T.accelFalloff)) / (1 - T.accelFalloff), 0.08, 1);
+      const f = clamp(1 - Math.max(0, (tr.v / top - T.accelFalloff)) / (1 - T.accelFalloff), 0.08, 1);
       tr.v += T.accel * th * f * dt;
     } else if (th < 0) {
       // Company doctrine bans backing up to make a sale — "shift into neutral and get out
@@ -270,11 +288,12 @@ export class Game {
     for (const h of this.houses) {
       if (h.cool > 0) h.cool -= dt;
       let g = 0;
-      if (this.song) g = D.hearAt(Math.hypot(h.x - tr.x, h.z - tr.z));
+      if (this.song) g = D.hearAt(Math.hypot(h.x - tr.x, h.z - tr.z), this.songRadius());
       if (g > 0) h.heard += D.JINGLE.heardRate * g * dt;
       else if (h.heard > 0) h.heard = Math.max(0, h.heard - D.JINGLE.heardDecay * dt);
 
-      if (!h.out && h.cool <= 0 && h.heard >= D.JINGLE.heardOut) {
+      const need = D.REGULAR_BY_HOUSE[h.id] ? D.JINGLE.heardOut * D.REGULAR.heardMul : D.JINGLE.heardOut;
+      if (!h.out && h.cool <= 0 && h.heard >= need) {
         const b = this.blocks[h.block];
         if (b.annoy >= D.JINGLE.annoyCold) { h.heard = 0; continue; }  // this block has had enough
         this._comeOut(h);
@@ -298,29 +317,40 @@ export class Game {
   _comeOut(h) {
     h.out = true;
     this.stats.cameOut++;
-    const kid = this.chance(D.CUSTOMER.kidChance);
 
-    // The one nobody has. It is never fillable, and that is the joke.
-    const impossible = this.chance(0.055);
-    const want = this.pick(D.MENU).key;
-    const said = impossible
-      ? this.pick(D.IMPOSSIBLE_ORDERS)
-      : this.pick((kid ? D.KID_ORDERS : D.ADULT_ORDERS)[want]);
-    if (impossible) this.stats.impossible++;
+    // ⚠️ A REGULAR LIVES AT A SPECIFIC HOUSE. If this is their door, it is them — not a
+    // stranger. P3: THEY KNOW YOUR NAME. Four strings each, the FRESH CUT architecture.
+    const reg = D.REGULAR_BY_HOUSE[h.id];
+    const kid = reg ? reg.kid : this.chance(D.CUSTOMER.kidChance);
+
+    // The one nobody has. It is never fillable, and that is the joke. Regulars are
+    // exempt — they know exactly what they want and they have for years.
+    const impossible = !reg && this.chance(0.055);
+    const want = reg ? reg.wants : this.pick(D.MENU).key;
+    let said;
+    if (impossible) { said = this.pick(D.IMPOSSIBLE_ORDERS); this.stats.impossible++; }
+    else if (reg) {
+      // their one mid-summer line, once ever, on a later visit
+      const useMid = this.met[reg.id] && !this.saidMid[reg.id] && this.chance(0.4);
+      if (useMid) { said = reg.mid; this.saidMid[reg.id] = 1; }
+      else said = reg.arrive;
+    } else said = this.pick((kid ? D.KID_ORDERS : D.ADULT_ORDERS)[want]);
 
     // Some of them arrive short. The kid who is forty cents short is the moral engine,
     // and it is load-bearing — reputation gates the event bookings that are the only
     // genuinely profitable stream in the real trade.
-    const price = this.priceOf(want);
-    const short = kid && this.chance(0.16);
-    const exact = this.chance(D.EXACT_CHANCE);
+    const price = this.priceOf(want) * (reg && reg.buysTwo ? 2 : 1);
+    const short = reg ? !!reg.alwaysShort : (kid && this.chance(0.16));
+    const exact = reg ? !!reg.exactAlways : this.chance(D.EXACT_CHANCE);
     const covers = D.TENDERS.filter(t => t >= price);
-    const tender = short ? Math.max(25, price - this.ri(1, 3) * 25)
+    const tender = short ? Math.max(25, price - (reg ? reg.alwaysShort : this.ri(1, 3) * 25))
       : exact ? price
         : (covers.length ? covers[Math.min(covers.length - 1, this.ri(0, 1))] : 2000);
 
     const p = {
       id: ++this._pid, houseId: h.id, block: h.block, kid,
+      reg: reg ? reg.id : null, who: reg ? reg.who : null,
+      qty: reg && reg.buysTwo ? 2 : 1,
       x: h.door.x, z: h.door.z, state: 'walk', t: 0,
       kx: h.kx, kz: h.kz,          // where they stand
       lx: h.lx, lz: h.lz,          // where a truck stops for them
@@ -345,6 +375,7 @@ export class Game {
     for (const p of this.people) {
       p.t += dt;
       const spd = p.kid ? C.runSpeed : C.walkSpeed;
+      const pat = C.patience * (p.reg ? D.REGULAR.patienceMul : 1);
 
       if (p.state === 'walk') {
         if (this._moveTo(p, p.kx, p.kz, spd, dt)) { p.state = 'kerb'; p.t = 0; }
@@ -365,10 +396,10 @@ export class Game {
         }
         // Will they walk to the window? Only if you're parked, open, and close enough.
         const d = Math.hypot(wp.x - p.x, wp.z - p.z);
-        if (canServe && d < C.willWalk && this.queueLen() < C.maxQueue) {
+        if (canServe && d < C.willWalk && this.queueLen() < this.maxQueue()) {
           p.state = 'toWindow';
           p.slot = this.people.filter(q => q !== p && inQueue(q)).length;   // join the back
-        } else if (p.t > C.patience * 1.6) {
+        } else if (p.t > pat * 1.6) {
           p.state = 'leaving'; this.stats.walkedOff++;
           this.cb.leave && this.cb.leave(p, 'waited');
         }
@@ -385,7 +416,7 @@ export class Game {
         this._moveTo(p, s.x, s.z, spd * 0.7, dt, C.reachWindow);
         // only whoever is at the front of the line is actually at your window
         if (!this.serving && (p.slot || 0) === 0) { this.serving = p; p.t = 0; this.cb.atWindow && this.cb.atWindow(p); }
-        if (p.t > C.patience) {
+        if (p.t > pat) {
           if (this.serving === p) this.serving = null;
           p.state = 'leaving'; this.stats.walkedOff++;
           this.cb.leave && this.cb.leave(p, 'patience');
@@ -435,7 +466,7 @@ export class Game {
     this.cold -= D.coldDrain({
       windowOpen: this.windowOpen,
       moving: Math.abs(this.truck.v) > 0.5,
-      heat,
+      heat, coldMul: this.mod.coldMul,
     }) * dt;
 
     if (this.cold <= 0) { this.cold = 0; this._endDay('cold'); }
@@ -443,6 +474,12 @@ export class Game {
   }
 
   soft() { return this.cold < D.COLD.softAt; }
+
+  // ---- what the upgrades actually change. ONE place each. -------------------
+  songRadius() { return D.JINGLE.radius * this.mod.radiusMul; }
+  maxQueue() { return D.CUSTOMER.maxQueue + this.mod.queueAdd; }
+  topSpeed() { return D.TRUCK.topSpeed * this.mod.speedMul; }
+  ceilingOf(block) { return this.blocks[block].ceiling + this.mod.ceilingAdd; }
 
   /**
    * The price a customer will actually be asked, right now.
@@ -536,18 +573,28 @@ export class Game {
 
     // ⚠️ ONE formula. This is the same call the face at the window is drawn from —
     // the readout and the behaviour cannot drift.
-    const ceiling = this.blocks[p.block].ceiling;
-    const price = this.priceOf(key);
+    const ceiling = this.ceilingOf(p.block);
+    // Mr Bell buys two. He has bought two every week since June died. He never explains
+    // and you never ask — so the till, the stock and the cold all count both of them.
+    const qty = p.qty || 1;
+    const price = this.priceOf(key) * qty;
+    if ((this.stock[key] || 0) < qty) return { ok: false, msg: 'not enough of that left' };
 
-    if (!D.willBuy(ceiling, price)) {
+    // ⚠️ A REGULAR NEVER BALKS AT THEIR USUAL. That is what loyalty IS, and it is the
+    // mechanical reason "they know your name" is worth anything: regulars are your
+    // price-proof income. Found because Marge wants a $3.50 cone and lives on a $3.00
+    // street — she could never once buy her own usual, so her character never fired.
+    // Hand a regular something they did NOT ask for and the street price applies again.
+    const theirUsual = p.reg && key === p.want;
+    if (!theirUsual && !D.willBuy(ceiling, this.priceOf(key))) {
       this.stats.balked++;
       p.state = 'leaving'; this.serving = null;
       this.cb.balk && this.cb.balk(p, price);
       return { ok: false, msg: 'too dear for this street', balked: true };
     }
 
-    this.stock[key]--;
-    this.cold = Math.max(0, this.cold - item.cold * D.COLD.perSaleUnit);
+    this.stock[key] -= qty;
+    this.cold = Math.max(0, this.cold - item.cold * D.COLD.perSaleUnit * qty);
     p.gave = key; p.price = price;
 
     if (p.tender < price) {
@@ -609,7 +656,7 @@ export class Game {
   _act_refuse() {
     const p = this.serving;
     if (!p || p.stage !== 'short') return { ok: false, msg: 'nobody is short' };
-    this.stock[p.gave]++;                          // it goes back in the box
+    this.stock[p.gave] += (p.qty || 1);            // it goes back in the box
     this.rep -= D.ECON.refuseRepLoss;
     this.stats.refused++;
     const h = this.houses.find(hh => hh.id === p.houseId);
@@ -620,10 +667,33 @@ export class Game {
 
   _finish(p, note) {
     this.stats.served++;
+    // ⚠️ P3: the day has to END ON A PERSON. Remember who the last one was, by name.
+    if (p.reg && note !== 'refused') {
+      this.met[p.reg] = (this.met[p.reg] || 0) + 1;
+      this.lastRegular = p.reg;
+      if (!this.metToday.includes(p.reg)) this.metToday.push(p.reg);
+    }
     p.state = 'leaving'; p.stage = 'done'; p.note = note; p.slot = undefined;
     this.serving = null;
     this._requeue();                 // everybody behind them steps up one
     this.cb.served && this.cb.served(p, note);
+  }
+
+  /** Buy a thing for the truck. The first meaningful one must land inside 45 minutes. */
+  _act_buy(key) {
+    const u = D.UPGRADE_BY_KEY[key];
+    if (!u) return { ok: false, msg: 'no such upgrade' };
+    if (this.owned[key]) return { ok: false, msg: 'you already have that' };
+    const purse = this.cash + this.drawer;
+    if (purse < u.cost) return { ok: false, msg: "you can't afford that yet" };
+    // spend the drawer first — that's the money that's actually in your hand
+    const fromDrawer = Math.min(this.drawer, u.cost);
+    this.drawer -= fromDrawer; this.cash -= (u.cost - fromDrawer);
+    this.owned[key] = 1;
+    this.mod = D.mods(this.owned);
+    if (u.mod.stockAdd) for (const m of D.MENU) this.stock[m.key] += u.mod.stockAdd;
+    this.cb.bought && this.cb.bought(u);
+    return { ok: true, bought: u.key };
   }
 
   /** Set what you're charging. Price discovery by face is the loop this feeds. */
@@ -664,6 +734,8 @@ export class Game {
       noiseHeat: Math.round(this.noiseHeat * 100) / 100,
       hour: Math.round(this.hour * 10) / 10,
       noteDue: this.noteDue, notePaid: this.notePaid, noteMisses: this.noteMisses,
+      lastRegular: this.lastRegular || null, metToday: [...this.metToday],
+      met: { ...this.met }, owned: { ...this.owned },
       annoy: Object.fromEntries(Object.values(this.blocks).map(b => [b.id, Math.round(b.annoy * 100) / 100])),
     };
   }
@@ -676,6 +748,8 @@ export class Game {
       rep: this.rep, noiseHeat: this.noiseHeat, tickets: this.tickets,
       noteMisses: this.noteMisses, song: this.song, windowOpen: this.windowOpen,
       stock: { ...this.stock }, prices: { ...this.prices }, pid: this._pid,
+      owned: { ...this.owned }, met: { ...this.met }, saidMid: { ...this.saidMid },
+      metToday: [...this.metToday], lastRegular: this.lastRegular || null,
       blocks: Object.fromEntries(Object.entries(this.blocks).map(([k, b]) => [k, b.annoy])),
       houses: this.houses.map(h => [h.heard, h.out ? 1 : 0, h.cool]),
       // copies, never the live arrays — an aliased snapshot restored in place iterates
@@ -696,6 +770,9 @@ export class Game {
     this.song = s.song; this.windowOpen = s.windowOpen;
     this.stock = { ...s.stock }; this._pid = s.pid;
     if (s.prices) this.prices = { ...s.prices };
+    this.owned = { ...(s.owned || {}) }; this.mod = D.mods(this.owned);
+    this.met = { ...(s.met || {}) }; this.saidMid = { ...(s.saidMid || {}) };
+    this.metToday = [...(s.metToday || [])]; this.lastRegular = s.lastRegular || null;
     for (const [k, a] of Object.entries(s.blocks)) if (this.blocks[k]) this.blocks[k].annoy = a;
     s.houses.forEach((h, i) => {
       if (!this.houses[i]) return;
@@ -766,7 +843,18 @@ export function soakRun(seed, opts = {}) {
   const WP = HP.ROUTE;
 
   const divertR = 26 + songLove * 22;      // how far off the route they'll chase a sale
+  // ⚠️ The cooldown is RE-ROLLED after every stop, not fixed. A constant one phase-locks
+  // the bot onto a standing wave: houses sit 19.3 m apart, so a fixed 30 m gap makes it
+  // stop at every OTHER house, in the same places, every seed — three of the five named
+  // regulars were served zero times in 24 days purely because of where they sat in the
+  // rhythm. A route driver's stops are not on a metronome.
   let guard = 0, lastT = -1, stopT = 0, stuckT = 0, sinceStop = 999, commit = null;
+  // ⚠️ SMALL — just enough to clear the spot you're standing in. It is the AHEAD filter,
+  // not this distance, that stops the bot shuffling in place. At 22-48 m the truck drove
+  // past everyone who came out WHILE IT WAS PARKED (they are behind it by the time it
+  // moves) and made five stops in an entire day, so most of the town and three of the
+  // five named regulars were never measured at all.
+  let nextGap = 8 + brng() * 12;
   // What the BOT did, as opposed to what the sim did. Kept in the return because "the
   // truck barely moved" is invisible in sim stats and cost several rounds to find.
   const bot = { parks: 0, departs: 0, mirrorHeld: 0, stuckFrames: 0, parkedFrames: 0, laps: 0 };
@@ -798,7 +886,7 @@ export function soakRun(seed, opts = {}) {
       if (p) goal = { x: p.lx, z: p.lz, cust: true, d: Math.hypot(p.lx - tr.x, p.lz - tr.z) };
       else commit = null;
     }
-    if (!goal && sinceStop > 55 && !tr.parked) {
+    if (!goal && sinceStop > nextGap && !tr.parked) {
       let bd = Infinity, pick = null;
       for (const p of g.people) {
         if (p.state !== 'kerb') continue;
@@ -831,7 +919,9 @@ export function soakRun(seed, opts = {}) {
     // metres, so the target speed has to go smoothly to zero AT the goal, not before it.
     let want = goal.cust ? clamp(goal.d * 0.4 - 0.6, 0, 6.5) : 9.0;
     want *= Math.max(0.28, 1 - Math.abs(err) / 1.15);   // and slow for the corner
-    const input = { throttle: 0, brake: 0, steer: clamp(err * 1.9, -1, 1) };
+    // ⚠️ NEGATED, because steer = +1 now means RIGHT (= decreasing yaw). A positive
+    // bearing error means yaw must increase, which is a LEFT input.
+    const input = { throttle: 0, brake: 0, steer: clamp(-err * 1.9, -1, 1) };
     if (tr.v < want - 0.15) input.throttle = 0.95;
     else if (tr.v > want + 0.15) input.brake = clamp((tr.v - want) * 0.6, 0.15, 1);
 
@@ -858,7 +948,10 @@ export function soakRun(seed, opts = {}) {
         }
       } else if (stopT > 18 + patience * 40 || (g.queueLen() === 0 && stopT > 12)) {
         act('window', false);
-        if (act('depart').ok) { act('song', true); stopT = 0; sinceStop = 0; commit = null; bot.departs++; }
+        if (act('depart').ok) {
+          act('song', true); stopT = 0; sinceStop = 0; commit = null; bot.departs++;
+          nextGap = 8 + brng() * 12;
+        }
         else bot.mirrorHeld++;
         // else: the mirror is holding it. Wait for them to move. Nothing bad happens.
       }

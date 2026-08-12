@@ -23,7 +23,7 @@ function freshSave() {
     days: 0, bestDay: 0,
     regulars: {}, towns: { hazelpark: 1 }, endings: {}, parlor: false,
     cash: D.ECON.startCash, rep: 0, noteMisses: 0, tickets: 0,
-    annoy: {}, prices: {},
+    annoy: {}, prices: {}, owned: {}, saidMid: {},
     settings: { muted: false },
   };
 }
@@ -63,7 +63,9 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'hi
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 app.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 400);
@@ -94,6 +96,7 @@ function newDay() {
     day: save.days + 1,
     cash: save.cash, rep: save.rep, noteMisses: save.noteMisses,
     tickets: save.tickets, annoy: save.annoy, prices: save.prices,
+    owned: save.owned, met: save.regulars, saidMid: save.saidMid,
     cb: {
       cameOut: () => { },
       served: (p, note) => { if (note === 'right' || note === 'mercy') sfx.coin(); else sfx.nope(); },
@@ -103,6 +106,7 @@ function newDay() {
       wrong: () => sfx.nope(),
       balk: () => { sfx.nope(); ui.hint('too dear for this street. try the clipboard.'); },
       bump: (v) => { if (v > 3) sfx.thunk(); },
+      bought: (u) => { sfx.ding(); ui.hint(`${u.name}. ${u.sub}.`, 6000); },
       park: () => sfx.hatch(),
       window: (on) => { sfx.slide(); camMode = on ? 'window' : 'cab'; },
       mirror: () => sfx.waveAt(),
@@ -126,6 +130,9 @@ function endDay(s) {
   save.annoy = Object.fromEntries(Object.values(G.blocks).map(b =>
     [b.id, Math.max(0, b.annoy - D.JINGLE.annoyDecayPerDay)]));   // blocks forgive overnight
   save.prices = { ...G.prices };
+  save.owned = { ...G.owned };
+  save.regulars = { ...G.met };          // the room COUNTS these
+  save.saidMid = { ...G.saidMid };
   persist();
   ui.dayEnd(s, G);
 }
@@ -179,7 +186,10 @@ function placeCamera(dt) {
   const r = { x: -Math.cos(t.yaw), z: Math.sin(t.yaw) };
 
   // the cab: behind the windscreen, a little left of centre because that's where the seat is
-  const cab = { x: t.x + f.x * 1.15 + r.x * -0.42, y: 1.86, z: t.z + f.z * 1.15 + r.z * -0.42 };
+  // ⚠️ SIT BACK. At 1.15 m forward the driver's nose is against the windscreen and the
+  // A-pillars and header eat most of the frame. 0.55 puts the screen a normal arm's
+  // length away and the road opens up.
+  const cab = { x: t.x + f.x * 0.95 + r.x * -0.40, y: 1.84, z: t.z + f.z * 0.95 + r.z * -0.40 };
   // The window: you step across and you are looking OUT at them. Kids at your window,
   // from inside your truck, in four o'clock light — this shot is the game's whole poster.
   // ⚠️ It must sit AT the opening, past the truck's own skin (half-width is 0.975). At
@@ -276,6 +286,13 @@ ui = new UI(() => G, {
   change: (c) => G && G.act('change', c),
   act: (a) => G && G.act(a),
   price: (k, d) => { if (G) { G.act('price', { key: k, cents: G.prices[k] + d }); ui.drawClip(); } },
+  buy: (k) => {
+    if (!G) return;
+    const r = G.act('buy', k);
+    if (!r.ok) ui.hint(r.msg);
+    else { save.owned = { ...G.owned }; persist(); }
+    ui.drawClip();
+  },
   nextDay: () => {
     document.getElementById('dayend').classList.add('hide');
     sfx.stopAll(); newDay(); running = true;

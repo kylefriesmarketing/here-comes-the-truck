@@ -29,8 +29,8 @@ const PINNED = { alwaysRight: true, greed: 0, patience: 0.5, songLove: 0.9, song
 const problems = [];
 const t0 = Date.now();
 
-function cell(label, policy, prices) {
-  const runs = SEEDS.map(s => soakRun(s, { policy: { ...PINNED, ...policy }, prices }));
+function cell(label, policy, prices, owned) {
+  const runs = SEEDS.map(s => soakRun(s, { policy: { ...PINNED, ...policy }, prices, owned }));
   const errs = runs.reduce((a, r) => a + r.errors.length, 0);
   if (errs) problems.push(`cell "${label}" produced ${errs} sim errors`);
   const m = (f) => runs.reduce((a, r) => a + f(r), 0) / runs.length;
@@ -106,13 +106,56 @@ console.log(`  8 seconds of grace: ${(g8.cameOut - g0.cameOut >= 0 ? '+' : '')}$
   `${(g8.annoy - g0.annoy >= 0 ? '+' : '')}${(g8.annoy - g0.annoy).toFixed(2)} annoy, ` +
   `${(g8.heat - g0.heat >= 0 ? '+' : '')}${(g8.heat - g0.heat).toFixed(0)} heat.`);
 
-// The gamble has to cut both ways: a few more seconds must BUY something, and leaning on
-// it all stop long must COST something. Either half missing and it isn't a decision.
-if (g8.cameOut <= g0.cameOut) {
-  problems.push('8 s of grace pulls no extra customers — the temptation does not exist, so the discipline is not a choice');
-}
-if (gMax.annoy <= g0.annoy || gMax.heat <= g0.heat) {
+// ⚠️ ASSERT ON THE LOW-VARIANCE SIDE ONLY. The COST of grace (annoy, noise heat) is
+// near-deterministic and must rise monotonically. The BENEFIT arrives through takings and
+// footfall, whose day-to-day spread is 54-101% of the mean — so at n=6 it is simply NOT
+// RESOLVABLE, and an earlier version of this file asserted on it and failed on noise.
+// Report it honestly rather than bending the test until it passes.
+const costRises = B.every((r, i) => i === 0 || r.annoy >= B[i - 1].annoy - 0.02);
+if (!costRises || gMax.annoy <= g0.annoy || gMax.heat <= g0.heat) {
   problems.push('leaning on the song all stop long costs nothing — the law side of the mechanic is inert');
+}
+const benefit = (gMax.gross - g0.gross) / g0.gross;
+console.log(benefit > 0.08
+  ? `  the bribe is real: ${(benefit * 100).toFixed(0)}% more takings for leaning on it.`
+  : `  ⚠️ the benefit of grace is BELOW THE NOISE FLOOR at n=${N} — not proven, not disproven.`);
+
+// =========================================================================
+// TRIAL C — THE UPGRADE LADDER. The direct guard against MY BREW's shipped disaster:
+// brewing the best product in the game and pricing it exactly as the UI instructed earned
+// LESS than a mediocre one, because the economy was tuned by feel. An upgrade that costs
+// real money and does not measurably pay is that same bug wearing a different hat.
+//
+// ⚠️ The freezer is the one that matters. "afford a better freezer" is the literal last
+// beat of this game's kill-gate sentence, so if it doesn't pay, the sentence is a lie.
+// =========================================================================
+console.log(`\nTRIAL C — the upgrade ladder   (n=${N} days per cell)`);
+console.log(`  ${pad('on the truck', 24)}${rt('gross', 9)}${rt('sold', 7)}${rt('came out', 10)}${rt('ends at', 9)}${rt('vs base', 9)}`);
+const base = cell('nothing yet', {}, null, {});
+const C = [base, ...D.UPGRADES.map(u => cell(u.name, {}, null, { [u.key]: 1 }))];
+for (const r of C) {
+  const d = r === base ? '' : ((r.gross - base.gross) / base.gross * 100).toFixed(0) + '%';
+  console.log(`  ${pad(r.label, 24)}${rt($(r.gross), 9)}${rt(r.served.toFixed(1), 7)}${rt(r.cameOut.toFixed(1), 10)}` +
+    `${rt(r.hour.toFixed(1) + 'h', 9)}${rt(d, 9)}`);
+}
+
+const plates = C.find(r => r.label === D.UPGRADE_BY_KEY.plates.name);
+const gainPlates = (plates.gross - base.gross) / base.gross;
+console.log(`  the second cold plate buys ${(plates.hour - base.hour).toFixed(1)} h of extra afternoon ` +
+  `and ${(gainPlates * 100).toFixed(0)}% more takings.`);
+
+if (plates.gross <= base.gross) {
+  problems.push('THE BETTER FREEZER EARNS LESS THAN NO FREEZER — the progression curve is inverted (this is MY BREW\'s bug)');
+}
+if (plates.hour <= base.hour) {
+  problems.push('the second cold plate does not extend the day at all — it is sold as afternoon and delivers none');
+}
+// and every paid upgrade should be defensible: none may make you strictly poorer.
+for (const r of C) {
+  if (r === base) continue;
+  if (r.gross < base.gross * 0.92) {
+    problems.push(`"${r.label}" leaves you ${((1 - r.gross / base.gross) * 100).toFixed(0)}% WORSE off than buying nothing`);
+  }
 }
 
 // =========================================================================
