@@ -136,7 +136,12 @@ export const CUSTOMER = {
   walkSpeed: 1.45,          // m/s out to the kerb
   runSpeed: 2.35,           // kids run
   patience: 52,             // sim-seconds at the window before they drift off
-  reachWindow: 2.6,         // how close counts as "at the window"
+  // ⚠️ SMALL. At 2.6 m this was larger than the distance from a kerb to the window, so
+  // everyone "arrived" the instant they were served-eligible and never took a step —
+  // the queue counter read 5 while five people stood scattered along the street and the
+  // view out of the window was an empty lawn.
+  reachWindow: 0.3,         // how close counts as "at the window"
+  queueGap: 0.95,           // they line up back along the truck
   serveRadius: 3.4,         // how close the truck must be to their kerb point
   // ⚠️ How far somebody will walk to reach a parked truck. Houses sit 24 m apart, so this
   // is the number that decides whether ONE stop serves one household or three. At 17 m
@@ -187,8 +192,13 @@ export const IMPOSSIBLE_ORDERS = [
   'the one from last summer',
 ];
 
-// What they hand you. Wadded singles and sticky coins.
-export const TENDERS = [100, 200, 500, 1000, 25, 50, 75, 125, 175];
+// What they hand you: wadded singles and sticky coins.
+// ⚠️ These are NOTES THAT COVER THE PRICE, and the sim picks the smallest that does.
+// A flat random draw from a list containing 25c meant any adult could hand over a quarter
+// for a $3 scoop and fall into the kid-is-short branch — which turned the game's moral
+// engine into background noise. Being short is a DELIBERATE case, not a dice roll.
+export const TENDERS = [100, 200, 500, 1000, 2000];
+export const EXACT_CHANCE = 0.30;    // some of them counted it out on the porch first
 
 // ---------------------------------------------------------------------------
 // THE MONEY — two debts, one honest and one not (bible §11)

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>HERE COMES THE TRUCK</title>
+<style>
+:root{
+  --paper:#f6efdd; --paper2:#ece0c6; --ink:#3d3428; --pencil:#c0392b;
+  --cream:#f4f1e6; --pink:#ef9ec0; --cyan:#63c3d8; --gold:#e8b04b;
+  --cold:#8fd3e8; --warm:#e0803f;
+  --ui-serif:Georgia,'Times New Roman',serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:#1c2416;
+  font-family:var(--ui-serif);color:var(--ink);-webkit-font-smoothing:antialiased}
+#app{position:fixed;inset:0}
+canvas{display:block}
+.hide{display:none !important}
+
+/* ---------- title ---------- */
+#title{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:1.1rem;text-align:center;
+  background:radial-gradient(ellipse at 50% 40%,#2a3550,#141a28 70%);color:var(--paper)}
+#title h1{font-size:clamp(2rem,7vw,4.4rem);letter-spacing:.06em;font-weight:400;
+  text-shadow:0 3px 0 rgba(0,0,0,.35)}
+#title h1 em{font-style:normal;color:var(--pink)}
+#title p{opacity:.82;max-width:34rem;line-height:1.65;font-size:1.02rem;padding:0 1.4rem}
+#title .keys{font-size:.86rem;opacity:.6;line-height:1.9}
+button{font-family:var(--ui-serif);cursor:pointer;border:0}
+.big{background:var(--paper);color:var(--ink);padding:.7rem 2rem;border-radius:3px;
+  font-size:1.1rem;box-shadow:0 3px 0 #0006}
+.big:hover{background:#fff}
+#title .foot{position:absolute;bottom:1rem;font-size:.74rem;opacity:.45;letter-spacing:.14em}
+
+/* ---------- the house link ---------- */
+#house{position:fixed;top:.55rem;left:.7rem;z-index:55;font-size:.76rem;
+  color:#fff;opacity:.5;text-decoration:none;letter-spacing:.05em;text-shadow:0 1px 3px #000}
+#house:hover{opacity:.95}
+
+/* ---------- hud ---------- */
+#hud{position:fixed;inset:0;z-index:20;pointer-events:none;
+  font-variant-numeric:tabular-nums}
+.card{background:rgba(246,239,221,.93);border-radius:3px;padding:.5rem .75rem;
+  box-shadow:0 2px 8px #0005}
+#gauges{position:absolute;left:1rem;bottom:1rem;min-width:14rem}
+#gauges .row{display:flex;justify-content:space-between;align-items:baseline;
+  font-size:.82rem;margin-bottom:.28rem}
+#gauges .row b{font-weight:400;opacity:.6;letter-spacing:.03em}
+.bar{height:9px;background:#0002;border-radius:2px;overflow:hidden;margin-bottom:.55rem}
+.bar i{display:block;height:100%;background:var(--cold);transition:width .18s linear}
+#annoybar i{background:var(--warm)}
+#drawer{position:absolute;right:1rem;bottom:1rem;text-align:right}
+#drawer .big-n{font-size:1.7rem;letter-spacing:.02em}
+#drawer .sub{font-size:.74rem;opacity:.6}
+#clock{position:absolute;right:1rem;top:1rem;text-align:right;font-size:.9rem}
+#songlamp{position:absolute;left:1rem;top:1rem;display:flex;align-items:center;gap:.45rem;
+  font-size:.82rem}
+#songlamp .dot{width:11px;height:11px;border-radius:50%;background:#0003}
+#songlamp.on .dot{background:var(--pink);box-shadow:0 0 10px var(--pink)}
+#prompt{position:absolute;left:50%;bottom:5.2rem;transform:translateX(-50%);
+  font-size:.94rem;text-align:center;white-space:nowrap}
+#mirrorwarn{position:absolute;left:50%;bottom:9.6rem;transform:translateX(-50%);
+  font-size:1rem;background:rgba(192,57,43,.92);color:#fff;padding:.5rem 1rem;border-radius:3px}
+#hint{position:absolute;left:50%;top:3.6rem;transform:translateX(-50%);max-width:36rem;
+  text-align:center;font-size:.92rem;line-height:1.5;opacity:0;transition:opacity .4s}
+#hint.show{opacity:1}
+
+/* ---------- the window ---------- */
+#serve{position:fixed;left:50%;bottom:1.2rem;transform:translateX(-50%);z-index:40;
+  width:min(46rem,94vw);pointer-events:auto}
+#said{font-size:1.35rem;margin-bottom:.1rem;line-height:1.35}
+#whosaid{font-size:.76rem;opacity:.55;margin-bottom:.7rem;letter-spacing:.04em}
+#menu{display:flex;gap:.4rem;flex-wrap:wrap}
+#menu button{flex:1 1 8rem;background:var(--paper2);padding:.5rem .5rem;border-radius:3px;
+  font-size:.86rem;text-align:left;line-height:1.35;box-shadow:0 2px 0 #0002}
+#menu button:hover{background:#fff}
+#menu button .k{opacity:.45;margin-right:.35rem}
+#menu button .p{display:block;font-size:.76rem;opacity:.6}
+#menu button.out{opacity:.35;cursor:default}
+#pay{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+#pay .line{flex:1 1 14rem;font-size:.95rem}
+#pay button{padding:.5rem 1rem;border-radius:3px;font-size:.9rem;box-shadow:0 2px 0 #0002}
+.b-ok{background:var(--gold)}
+.b-ok:hover{filter:brightness(1.08)}
+.b-grey{background:var(--paper2)}
+.b-grey:hover{background:#fff}
+/* shorting a kid is a SEPARATE, deliberate button. It can never be a misclick. */
+.b-short{background:#d8ccc0;color:#6b4030;font-size:.8rem !important;opacity:.8}
+.b-short:hover{opacity:1;background:#e6b7a2}
+
+/* ---------- the clipboard on the dash ---------- */
+#clip{position:fixed;inset:0;z-index:50;background:#0008;display:flex;
+  align-items:center;justify-content:center}
+#clipsheet{width:min(40rem,94vw);max-height:86vh;overflow:auto;background:var(--paper);
+  padding:1.5rem 1.7rem;border-radius:2px;box-shadow:0 14px 40px #000a;
+  border-left:6px solid #8a7a5e}
+#clipsheet h2{font-weight:400;font-size:1.5rem;margin-bottom:.15rem}
+#clipsheet .sub{font-size:.8rem;opacity:.55;margin-bottom:1.1rem}
+#clipsheet h3{font-weight:400;font-size:.78rem;letter-spacing:.16em;text-transform:uppercase;
+  opacity:.5;margin:1.2rem 0 .5rem}
+#clipsheet table{width:100%;border-collapse:collapse;font-size:.9rem}
+#clipsheet td{padding:.3rem 0;border-bottom:1px dotted #0002}
+#clipsheet td.r{text-align:right;font-variant-numeric:tabular-nums}
+#clipsheet .pr button{background:var(--paper2);padding:.1rem .5rem;border-radius:2px;font-size:.86rem}
+#clipsheet .pr button:hover{background:#fff}
+#clipsheet .note{font-size:.86rem;line-height:1.6;opacity:.75;margin-top:.4rem}
+
+/* ---------- end of day ---------- */
+#dayend{position:fixed;inset:0;z-index:58;background:#0009;display:flex;
+  align-items:center;justify-content:center}
+#endcard{width:min(34rem,94vw);background:var(--paper);padding:1.7rem 1.9rem;border-radius:2px;
+  box-shadow:0 14px 40px #000a}
+#endcard h2{font-weight:400;font-size:1.7rem;margin-bottom:.1rem}
+#endcard .sub{font-size:.82rem;opacity:.55;margin-bottom:1.2rem}
+#endcard table{width:100%;border-collapse:collapse;font-size:.94rem;margin-bottom:1rem}
+#endcard td{padding:.32rem 0;border-bottom:1px dotted #0002}
+#endcard td.r{text-align:right;font-variant-numeric:tabular-nums}
+#endcard .tot td{border-bottom:0;font-size:1.15rem;padding-top:.7rem}
+/* THE LOOP ENDS ON A PERSON, NOT A NUMBER. */
+#reply{font-size:1.02rem;line-height:1.6;font-style:italic;opacity:.85;
+  border-left:3px solid var(--pencil);padding:.2rem 0 .2rem .9rem;margin-bottom:1.3rem}
+#endcard .foot{font-size:.72rem;opacity:.4;letter-spacing:.12em;margin-top:1rem;text-align:center}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<a id="house" href="https://kylefriesmarketing.github.io/games/">← the house</a>
+
+<div id="hud" class="hide">
+  <div id="songlamp"><span class="dot"></span><span id="songtxt">hold SPACE for the song</span></div>
+  <div id="clock" class="card"><span id="hourtxt">2:00</span></div>
+  <div id="gauges" class="card">
+    <div class="row"><b>the cold</b><span id="coldtxt">100%</span></div>
+    <div class="bar"><i id="coldbar" style="width:100%"></i></div>
+    <div class="row"><b id="blocktxt">maple st</b><span id="annoytxt">quiet</span></div>
+    <div class="bar" id="annoybar"><i style="width:0%"></i></div>
+  </div>
+  <div id="drawer" class="card">
+    <div class="big-n" id="drawertxt">$0.00</div>
+    <div class="sub" id="drawersub">in the drawer</div>
+  </div>
+  <div id="prompt" class="card hide"></div>
+  <div id="mirrorwarn" class="hide">check your mirror</div>
+  <div id="hint"><span class="card" id="hinttxt"></span></div>
+</div>
+
+<div id="serve" class="card hide">
+  <div id="said"></div>
+  <div id="whosaid"></div>
+  <div id="menu"></div>
+  <div id="pay" class="hide"></div>
+</div>
+
+<div id="clip" class="hide"><div id="clipsheet"></div></div>
+<div id="dayend" class="hide"><div id="endcard"></div></div>
+
+<div id="title">
+  <h1>HERE COMES <em>THE TRUCK</em></h1>
+  <p>cy ran this route for thirty-one years and then one day didn't.
+     the truck's yours now, and so is the note on it.</p>
+  <button class="big" id="start">start the engine</button>
+  <div class="keys">
+    <b>W A S D</b> drive &nbsp;·&nbsp; <b>SPACE</b> hold for the song &nbsp;·&nbsp; <b>E</b> park / pull away<br>
+    <b>Q</b> the window &nbsp;·&nbsp; <b>1–5</b> serve &nbsp;·&nbsp; <b>TAB</b> the clipboard &nbsp;·&nbsp; <b>M</b> mute
+  </div>
+  <div class="foot">a DIRTY BOY DEVS game</div>
+</div>
+
+<script type="importmap">{"imports":{"three":"./lib/three.module.js"}}</script>
+<script type="module" src="truck/main.js"></script>
+</body>
+</html>

@@ -103,8 +103,14 @@ export class Game {
    *  Real law: vend only from the side away from traffic. */
   windowPos() {
     const r = this.right(), t = this.truck;
-    const o = D.TRUCK.wide / 2 + 0.7;
-    return { x: t.x + r.x * o, z: t.z + r.z * o };
+    const o = D.TRUCK.wide / 2 + 1.1;    // far enough out that the head of the queue is
+    return { x: t.x + r.x * o, z: t.z + r.z * o };   // leaning at your window, not in your face
+  }
+
+  /** Where the i-th person in the queue stands: a line back along the truck's flank. */
+  queueSlot(i) {
+    const wp = this.windowPos(), f = this.fwd(), gap = D.CUSTOMER.queueGap * i;
+    return { x: wp.x - f.x * gap, z: wp.z - f.z * gap };
   }
 
   /** Truck-local coordinates of a world point: {fwd, lat}. */
@@ -302,10 +308,16 @@ export class Game {
       : this.pick((kid ? D.KID_ORDERS : D.ADULT_ORDERS)[want]);
     if (impossible) this.stats.impossible++;
 
-    const price = D.MENU_BY_KEY[want].price;
-    // Some of them arrive short. The kid who is forty cents short is the moral engine.
+    // Some of them arrive short. The kid who is forty cents short is the moral engine,
+    // and it is load-bearing — reputation gates the event bookings that are the only
+    // genuinely profitable stream in the real trade.
+    const price = this.priceOf(want);
     const short = kid && this.chance(0.16);
-    const tender = short ? Math.max(25, price - this.ri(1, 3) * 25) : this.pick(D.TENDERS);
+    const exact = this.chance(D.EXACT_CHANCE);
+    const covers = D.TENDERS.filter(t => t >= price);
+    const tender = short ? Math.max(25, price - this.ri(1, 3) * 25)
+      : exact ? price
+        : (covers.length ? covers[Math.min(covers.length - 1, this.ri(0, 1))] : 2000);
 
     const p = {
       id: ++this._pid, houseId: h.id, block: h.block, kid,
@@ -324,6 +336,11 @@ export class Game {
     const C = D.CUSTOMER, tr = this.truck;
     const wp = this.windowPos();
     const canServe = tr.parked && this.windowOpen;
+    // ⚠️ A QUEUE SLOT IS ASSIGNED ON JOINING AND HELD. Deriving the position from a sort
+    // of the current queue means every new arrival renumbers everybody, so all five chase
+    // a slot that keeps moving and nobody ever reaches the front — the counter reads 5
+    // and `serving` stays null forever.
+    const inQueue = (p) => p.state === 'toWindow' || p.state === 'window';
 
     for (const p of this.people) {
       p.t += dt;
@@ -350,18 +367,24 @@ export class Game {
         const d = Math.hypot(wp.x - p.x, wp.z - p.z);
         if (canServe && d < C.willWalk && this.queueLen() < C.maxQueue) {
           p.state = 'toWindow';
+          p.slot = this.people.filter(q => q !== p && inQueue(q)).length;   // join the back
         } else if (p.t > C.patience * 1.6) {
           p.state = 'leaving'; this.stats.walkedOff++;
           this.cb.leave && this.cb.leave(p, 'waited');
         }
 
       } else if (p.state === 'toWindow') {
-        if (!canServe) { p.state = 'kerb'; continue; }
-        if (this._moveTo(p, wp.x, wp.z, spd, dt, C.reachWindow)) { p.state = 'window'; p.t = 0; }
+        if (!canServe) { p.state = 'kerb'; this._requeue(); continue; }
+        const s = this.queueSlot(p.slot || 0);
+        if (this._moveTo(p, s.x, s.z, spd, dt, C.reachWindow)) { p.state = 'window'; p.t = 0; }
 
       } else if (p.state === 'window') {
-        if (!canServe) { p.state = 'kerb'; if (this.serving === p) this.serving = null; continue; }
-        if (!this.serving) { this.serving = p; p.t = 0; this.cb.atWindow && this.cb.atWindow(p); }
+        if (!canServe) { p.state = 'kerb'; if (this.serving === p) this.serving = null; this._requeue(); continue; }
+        // the line shuffles forward as the person ahead is served
+        const s = this.queueSlot(p.slot || 0);
+        this._moveTo(p, s.x, s.z, spd * 0.7, dt, C.reachWindow);
+        // only whoever is at the front of the line is actually at your window
+        if (!this.serving && (p.slot || 0) === 0) { this.serving = p; p.t = 0; this.cb.atWindow && this.cb.atWindow(p); }
         if (p.t > C.patience) {
           if (this.serving === p) this.serving = null;
           p.state = 'leaving'; this.stats.walkedOff++;
@@ -395,6 +418,14 @@ export class Game {
   }
 
   queueLen() { return this.people.filter(p => p.state === 'window' || p.state === 'toWindow').length; }
+
+  /** Close the gap after somebody leaves the line — everybody behind steps up one. */
+  _requeue() {
+    this.people
+      .filter(p => p.state === 'toWindow' || p.state === 'window')
+      .sort((a, b) => (a.slot || 0) - (b.slot || 0))
+      .forEach((p, i) => { p.slot = i; });
+  }
 
   // ---- the clock, which is the cold ---------------------------------------
   _clock(dt) {
@@ -589,8 +620,9 @@ export class Game {
 
   _finish(p, note) {
     this.stats.served++;
-    p.state = 'leaving'; p.stage = 'done'; p.note = note;
+    p.state = 'leaving'; p.stage = 'done'; p.note = note; p.slot = undefined;
     this.serving = null;
+    this._requeue();                 // everybody behind them steps up one
     this.cb.served && this.cb.served(p, note);
   }
 
