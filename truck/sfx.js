@@ -163,7 +163,10 @@ export function ambStart() {
     if (!amb.nodes.includes(src)) return;
     const t = AC.currentTime, dur = 1.6 + Math.random() * 2.4;
     const o = AC.createOscillator(); o.type = 'sawtooth'; o.frequency.value = 3100 + Math.random() * 700;
-    const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 4200; bp.Q = 7;
+    // ⚠️ `Q` is an AudioParam, not a number. `bp.Q = 7` throws "which has only a getter"
+    // — and because the cicadas reschedule themselves, it threw on a timer every few
+    // seconds forever while the game itself carried on looking perfectly fine.
+    const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 4200; bp.Q.value = 7;
     const cg = AC.createGain(); cg.gain.setValueAtTime(0, t);
     cg.gain.linearRampToValueAtTime(0.010, t + 0.5);
     cg.gain.setTargetAtTime(0, t + dur, 0.4);
