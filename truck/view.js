@@ -375,8 +375,26 @@ export class View {
 
     // ---- the box: tall, flat-sided, sitting high on a chassis. A step van. ----
     const FLOOR = 0.62, ROOF = 2.98;                 // interior floor and ceiling heights
-    const body = box(T.wide, ROOF - FLOOR, T.len, cream);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(T.wide, ROOF - FLOOR, T.len),
+      lam({ color: cream, emissive: 0x33302a }));   // see the brighten() note below
     body.position.y = (ROOF + FLOOR) / 2; body.castShadow = true; g.add(body);
+
+    // ⚠️ THE LIVERY GOES ON BOTH FLANKS, and the important one is the KERB side. The
+    // first version painted only the truck's left, so the side the entire town looks at
+    // was a blank white box — which is most of what "the truck looks horrible" meant.
+    // It sits BELOW the serving window, which is where a real truck carries it, and it is
+    // one continuous panel per side so the hand-painted name never tiles.
+    const LIVY0 = FLOOR + 0.02, LIVY1 = 1.50;
+    for (const sx of [-1, 1]) {
+      const skin = new THREE.Mesh(
+        new THREE.BoxGeometry(0.05, LIVY1 - LIVY0, T.len - 0.12),
+        // ⚠️ a little self-coloured emissive, FRESH CUT's brighten() trick: the sun is
+        // aimed across the street, so an unlit flank renders as a grey slab and the whole
+        // truck reads dirty. This lifts the shaded side without flattening it.
+        lam({ map: TX.livery(T.len - 0.12, LIVY1 - LIVY0, "CY'S"), emissive: 0x2a2724 }));
+      skin.position.set(sx * (T.wide / 2 + 0.026), (LIVY0 + LIVY1) / 2, 0);
+      g.add(skin);
+    }
 
     // the chassis and skirt under it, so it isn't a box floating on four discs
     const skirt = box(T.wide - 0.06, 0.34, T.len - 0.5, 0xcfc7b4);
@@ -437,13 +455,13 @@ export class View {
     const header = box(T.wide, ROOF - GTOP, 0.12, pillarC);
     header.position.set(0, (GTOP + ROOF) / 2, T.len / 2 - 0.05); g.add(header);
 
-    // the painted flank + stripe + hand-painted name, on the LEFT side (local +X)
-    const panel = box(0.05, 0.80, 3.0, 0xef9ec0);
-    panel.position.set(T.wide / 2 + 0.02, 1.85, -0.5); g.add(panel);
-    const stripe = box(0.05, 0.20, 3.0, 0x63c3d8);
-    stripe.position.set(T.wide / 2 + 0.02, 1.30, -0.5); g.add(stripe);
-    const name = box(0.04, 0.42, 1.15, 0x8a3f34);   // CY'S, in somebody else's hand
-    name.position.set(T.wide / 2 + 0.05, 1.86, -0.5); g.add(name);
+    // a cyan waistline above the livery, wrapping the whole van
+    for (const sx of [-1, 1]) {
+      const belt = box(0.04, 0.10, T.len - 0.1, 0x63c3d8);
+      belt.position.set(sx * (T.wide / 2 + 0.028), LIVY1 + 0.09, 0); g.add(belt);
+    }
+    const beltF = box(T.wide + 0.05, 0.10, 0.04, 0x63c3d8);
+    beltF.position.set(0, LIVY1 + 0.09, -T.len / 2 - 0.02); g.add(beltF);
 
     // ---- THE SERVING WINDOW, on the kerb side (local -X) ----
     // ⚠️ A FRAME WITH A HOLE, never a pane: the window camera sits inside it and looks
@@ -478,7 +496,8 @@ export class View {
     // of the frame and the windscreen became a letterbox. At 2.15 m wide with the seat set
     // back it reads as sitting in a van, which is what it is.
     const inC = 0xdcd6c6;
-    const floorM = box(T.wide - 0.10, 0.06, T.len - 0.2, 0x6b6258);
+    const floorM = new THREE.Mesh(new THREE.BoxGeometry(T.wide - 0.10, 0.06, T.len - 0.2),
+      lam({ map: TX.tiled(TX.chequer(), 3, 7) }));      // the chequer plate every van has
     floorM.position.set(0, FLOOR, 0); g.add(floorM);
     const ceilM = box(T.wide - 0.10, 0.06, T.len - 0.2, 0xe6e0d0);
     ceilM.position.set(0, ROOF - 0.06, 0); g.add(ceilM);
@@ -537,9 +556,18 @@ export class View {
       w.castShadow = true; g.add(w); this.wheels.push(w);
       const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.32, 12), lam({ color: 0xb9b3aa }));
       hub.rotation.z = Math.PI / 2; hub.position.copy(w.position); g.add(hub);
-      // a wheel arch cut into the skirt
-      const arch = box(0.10, 0.5, 1.2, cream);
-      arch.position.set(x * (T.wide / 2 - 0.01), FLOOR - 0.10, z); g.add(arch);
+      // ⚠️ A WHEEL ARCH IS A HOLE, NOT A LUMP. The first pass put a cream box beside each
+      // tyre, which read as four white bricks glued to the sides. A dark well behind the
+      // wheel plus a curved fender over it reads as an arch cut into the bodywork.
+      const well = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.62, 0.62, 0.16, 14, 1, false, 0, Math.PI),
+        lam({ color: 0x2a2724 }));
+      well.rotation.z = Math.PI / 2; well.rotation.y = Math.PI / 2;
+      well.position.set(x * (T.wide / 2 - 0.05), FLOOR - 0.18, z); g.add(well);
+      const fender = new THREE.Mesh(
+        new THREE.TorusGeometry(0.62, 0.055, 6, 14, Math.PI), lam({ color: cream }));
+      fender.rotation.y = Math.PI / 2;
+      fender.position.set(x * (T.wide / 2 + 0.02), FLOOR - 0.18, z); g.add(fender);
     }
 
     // ⚠️ THE MIRROR — sized by the angle it subtends from the driver's eye, not by what
@@ -603,8 +631,19 @@ export class View {
 
     // the counter under the serving window, with the register on it
     const win = at('window');
-    const counter = box(0.44, 0.08, 2.1, 0xb9bec2);
+    const counter = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.08, 2.1),
+      lam({ map: TX.tiled(TX.steel(), 1, 4) }));
     counter.position.set(-(T.wide / 2 - 0.27), FLOOR + 0.86, win.z); g.add(counter);
+
+    // ⚠️ THE MENU BOARD — the tycoon UI, made diegetic. The prices you charge hang on a
+    // board in your own truck where the customer can read them too, instead of living in
+    // a DOM panel over the world. `this.board` is repainted whenever a price or the stock
+    // changes; see refreshBoard().
+    this.board = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.1),
+      new THREE.MeshBasicMaterial({ map: TX.menuBoard([]) }));
+    this.board.position.set(T.wide / 2 - 0.09, FLOOR + 1.55, win.z - 0.15);
+    this.board.rotation.y = -Math.PI / 2; g.add(this.board);
+    this._boardKey = '';
     const cFront = box(0.06, 0.80, 2.1, 0xe4ded0);
     cFront.position.set(-(T.wide / 2 - 0.50), FLOOR + 0.44, win.z); g.add(cFront);
     const till = box(0.30, 0.20, 0.42, 0x5a564f);
@@ -644,10 +683,13 @@ export class View {
     // faces the GROUND colour, so the ceiling of an enclosed box renders near-black and
     // the whole bay looks like a cave. One cheap point light is the difference between
     // "inside a truck" and "inside a cave".
-    const bulb = new THREE.PointLight(0xfff0d4, 0.85, 7.5, 1.4);
+    const bulb = new THREE.PointLight(0xfff2da, 1.5, 8.5, 1.2);
     bulb.position.set(0, D.TRUCK.high - 0.35, -0.6); g.add(bulb);
-    const bulb2 = new THREE.PointLight(0xfff0d4, 0.45, 5.0, 1.4);
-    bulb2.position.set(0, D.TRUCK.high - 0.35, 1.6); g.add(bulb2);
+    const bulb2 = new THREE.PointLight(0xfff2da, 1.0, 6.5, 1.2);
+    bulb2.position.set(0, D.TRUCK.high - 0.35, 1.4); g.add(bulb2);
+    // and a strip over the serving counter, so the window is a lit shop and not a hole
+    const bulb3 = new THREE.PointLight(0xfff6e4, 0.9, 4.0, 1.3);
+    bulb3.position.set(-0.35, 2.35, D.STATION_BY_ID.window.z); g.add(bulb3);
   }
 
   // -------------------------------------------------------------------------
@@ -732,6 +774,9 @@ export class View {
     const want = sim.windowOpen ? hu.open : hu.shut;
     this.hatch.position.y += (want - this.hatch.position.y) * Math.min(1, dt * 6);
 
+    this._refreshBoard(sim);
+    this._holdItem(sim);
+
     // the machine is visibly going while it churns — the lever swings
     if (this.churnLever) this.churnLever.rotation.x = sim.churning ? Math.sin(t * 7) * 0.55 : 0;
 
@@ -769,6 +814,89 @@ export class View {
   }
 
   sunOff = { x: 48, y: 78, z: 34 };
+
+  /** Repaint the menu board only when something on it actually changed. */
+  _refreshBoard(sim) {
+    if (!this.board) return;
+    const rows = sim.menu().map(m => ({
+      label: m.label, price: '$' + (sim.priceOf(m.key) / 100).toFixed(2),
+      out: (sim.stock[m.key] || 0) <= 0,
+    }));
+    const key = rows.map(r => r.label + r.price + r.out).join('|');
+    if (key === this._boardKey) return;
+    this._boardKey = key;
+    if (this.board.material.map) this.board.material.map.dispose();
+    this.board.material.map = TX.menuBoard(rows);
+    this.board.material.needsUpdate = true;
+  }
+
+  /**
+   * ⚠️ WHAT IS IN YOUR HANDS HAS TO BE VISIBLE. Carrying was a line of text in a panel,
+   * which is the same mistake as the menu buttons: the truck is the interface, so the
+   * cone you are holding belongs in front of your face, not in the HUD. Parented to the
+   * TRUCK, positioned in truck-local space at the crew's own position — so it rides along
+   * exactly like the person holding it.
+   */
+  _holdItem(sim) {
+    const key = sim.crew.hands;
+    if (key !== this._heldKey) {
+      this._heldKey = key;
+      if (this.held) { this.truck.remove(this.held); this.held = null; }
+      if (key) this.held = this._makeTreat(sim.itemOf(key));
+      if (this.held) this.truck.add(this.held);
+    }
+    if (!this.held) return;
+    const cr = sim.crew;
+    // ⚠️ In your RIGHT hand, in frame. `right` is (-cos, sin), so a POSITIVE lat is the
+    // right hand; negative put it out past the left edge of the screen where you could
+    // only half see it. Held low enough to read as carried, high enough to stay on screen.
+    const s = Math.sin(cr.yaw), c = Math.cos(cr.yaw);
+    const fwd = 0.52, lat = 0.24;
+    this.held.position.set(cr.x + s * fwd - c * lat, 0.62 + D.CREW.eye - 0.26, cr.z + c * fwd + s * lat);
+    this.held.rotation.y = cr.yaw;
+  }
+
+  /** A little mesh for whatever you're carrying, built from what kind of thing it is. */
+  _makeTreat(item) {
+    if (!item) return null;
+    const g = new THREE.Group();
+    const k = item.key;
+    const cone = () => {
+      const c = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.16, 10), lam({ color: 0xe8c98a }));
+      c.rotation.x = Math.PI; c.position.y = -0.05; g.add(c);
+      for (let i = 0; i < 3; i++) {
+        const s = new THREE.Mesh(new THREE.SphereGeometry(0.052 - i * 0.009, 10, 8),
+          lam({ color: 0xf6ece0 }));
+        s.position.y = 0.045 + i * 0.035; g.add(s);
+      }
+    };
+    const stick = (col) => {
+      const b = box(0.05, 0.16, 0.025, col); b.position.y = 0.03; g.add(b);
+      const st = box(0.012, 0.07, 0.012, 0xd8c9a0); st.position.y = -0.08; g.add(st);
+    };
+    if (k === 'cone') cone();
+    else if (k === 'scoop') {
+      const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.045, 0.07, 12), lam({ color: 0xf2ece0 }));
+      g.add(cup);
+      const s = new THREE.Mesh(new THREE.SphereGeometry(0.05, 10, 8), lam({ color: 0xf6d9c0 }));
+      s.position.y = 0.05; g.add(s);
+    }
+    else if (k === 'eyes') stick(0x6b4632);
+    else if (k === 'bomb') {
+      stick(0xd8453a);
+      const w = box(0.052, 0.05, 0.027, 0xf2f0ea); w.position.y = 0.03; g.add(w);
+      const b2 = box(0.052, 0.05, 0.027, 0x3f6fd4); b2.position.y = -0.02; g.add(b2);
+    }
+    else if (k === 'pop') { const t = box(0.03, 0.20, 0.03, 0xe86b86); t.position.y = 0.02; g.add(t); }
+    else if (item.invented) {
+      // whatever you made takes the shape of the base it was churned from
+      const base = item.recipe && item.recipe.base;
+      if (base === 'bar') stick(0x8a5a3a);
+      else if (base === 'ice') { const t = box(0.03, 0.20, 0.03, 0x8fd8c0); t.position.y = 0.02; g.add(t); }
+      else cone();
+    } else cone();
+    return g;
+  }
 
   /**
    * ⚠️ THE LIGHT RUNS OFF THE CLOCK, NOT OFF PROGRESS. FRESH CUT drives its golden hour

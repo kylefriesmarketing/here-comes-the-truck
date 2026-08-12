@@ -13,11 +13,20 @@ import * as THREE from 'three';
 const CACHE = {};
 const rnd = (a, b) => a + Math.random() * (b - a);
 
+/**
+ * `size` may be a number (square) or [w, h].
+ * ⚠️ It has to support non-square. The livery is a 5.5 x 0.8 m panel; drawn on a square
+ * canvas it occupied a 146-pixel strip at the top of 1024 and the other 86% went out to
+ * the truck as blank cream — which is exactly what "the flank is still a white box"
+ * looked like. Always draw across the WHOLE canvas you are going to map.
+ */
 function make(key, size, draw) {
   if (CACHE[key]) return CACHE[key];
   const c = document.createElement('canvas');
-  c.width = c.height = size;
-  draw(c.getContext('2d'), size);
+  const w = Array.isArray(size) ? size[0] : size;
+  const h = Array.isArray(size) ? size[1] : size;
+  c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.anisotropy = 8;
@@ -244,6 +253,116 @@ export function face(kind, seed) {
 
 /** Freckles, glasses, a cap — one small extra so faces aren't all the same face. */
 export const FACE_KINDS = ['kid', 'adult'];
+
+// ---------------------------------------------------------------------------
+// THE LIVERY. ⚠️ Kyle: "the truck still looks horrible" — and the first exterior shot
+// showed why: the painted flank was on the truck's LEFT, so the KERB SIDE, the only side
+// the whole town ever sees, was a blank white box. Both flanks are painted now, and it is
+// painted rather than built: a canvas texture carries the band, the pinstripe, the name
+// and a scoop, which is both the house style and a tenth of the geometry.
+// ---------------------------------------------------------------------------
+export function livery(w, h, name) {
+  const PX = 2048, PY = Math.max(64, Math.round(PX * h / w));
+  return make(`livery${w.toFixed(2)}x${h.toFixed(2)}-${name}`, [PX, PY], (g, S, H) => {
+    g.fillStyle = '#f7f3e6'; g.fillRect(0, 0, S, H);
+    const y = (f) => f * H;                   // the whole canvas IS the panel
+
+    // the coral band and its cyan pinstripe, running the length
+    g.fillStyle = '#ef9ec0'; g.fillRect(0, y(0.30), S, y(0.24));
+    g.fillStyle = '#63c3d8'; g.fillRect(0, y(0.56), S, y(0.055));
+    g.fillStyle = '#e8b04b'; g.fillRect(0, y(0.545), S, y(0.012));
+
+    // a painted scoop, because every one of these trucks has one
+    const cx = S * 0.17, cy = y(0.42), r = y(0.115);
+    g.fillStyle = '#f6d9a0';
+    g.beginPath(); g.moveTo(cx - r * 0.62, cy); g.lineTo(cx + r * 0.62, cy);
+    g.lineTo(cx, cy + r * 1.5); g.closePath(); g.fill();
+    g.strokeStyle = 'rgba(150,110,60,.5)'; g.lineWidth = S * 0.003;
+    for (let i = -2; i <= 2; i++) {
+      g.beginPath(); g.moveTo(cx + i * r * 0.22, cy + Math.abs(i) * r * 0.2);
+      g.lineTo(cx + i * r * 0.1, cy + r * 1.4); g.stroke();
+    }
+    for (const [dx, dy, rr, c] of [[-0.42, -0.30, 0.46, '#f6e2ea'], [0.40, -0.34, 0.44, '#f2a0b4'], [0, -0.62, 0.48, '#f6e2ea']]) {
+      g.fillStyle = c; g.beginPath(); g.arc(cx + dx * r, cy + dy * r, rr * r, 0, 7); g.fill();
+    }
+
+    // The name, hand-painted — the decision the bible hangs a whole arc on.
+    // ⚠️ Sized off the panel HEIGHT, so it fills the band however long the truck is.
+    g.textBaseline = 'middle';
+    g.font = `700 ${Math.round(y(0.46))}px Georgia, serif`;
+    g.fillStyle = 'rgba(60,40,30,.25)';
+    g.fillText(name, S * 0.29 + y(0.03), y(0.44) + y(0.03));
+    g.fillStyle = '#8a3f34';
+    g.fillText(name, S * 0.29, y(0.44));
+    g.font = `600 ${Math.round(y(0.16))}px Georgia, serif`;
+    g.fillStyle = '#3d5866';
+    g.fillText('I C E   C R E A M', S * 0.29, y(0.78));
+
+    // rivet lines and a little honest grime along the bottom
+    g.fillStyle = 'rgba(0,0,0,.10)';
+    for (let x = S * 0.02; x < S; x += S * 0.045) g.fillRect(x, y(0.05), 2, 2);
+    const gr = g.createLinearGradient(0, y(0.80), 0, y(1));
+    gr.addColorStop(0, 'rgba(90,80,60,0)'); gr.addColorStop(1, 'rgba(90,80,60,.28)');
+    g.fillStyle = gr; g.fillRect(0, y(0.80), S, y(0.2));
+  });
+}
+
+/**
+ * THE MENU BOARD — the price list, painted on a board beside the window.
+ * ⚠️ This is the tycoon UI being DIEGETIC. The prices you charge live on a board in your
+ * own truck, where the customer can see them too, rather than in a DOM panel floating
+ * over the world. Redrawn whenever a price or the stock changes.
+ */
+export function menuBoard(rows) {
+  const c = document.createElement('canvas');
+  c.width = 512; c.height = 512;
+  const g = c.getContext('2d');
+  g.fillStyle = '#2f2a24'; g.fillRect(0, 0, 512, 512);
+  g.strokeStyle = '#e8b04b'; g.lineWidth = 6; g.strokeRect(10, 10, 492, 492);
+  g.fillStyle = '#f6efdd'; g.font = '700 44px Georgia, serif'; g.textAlign = 'center';
+  g.fillText('TO-DAY', 256, 66);
+  g.strokeStyle = 'rgba(246,239,221,.3)'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(40, 84); g.lineTo(472, 84); g.stroke();
+  g.textAlign = 'left'; g.font = '400 30px Georgia, serif';
+  rows.slice(0, 9).forEach((r, i) => {
+    const y = 132 + i * 42;
+    g.fillStyle = r.out ? 'rgba(246,239,221,.32)' : '#f6efdd';
+    const label = r.label.length > 22 ? r.label.slice(0, 21) + '…' : r.label;
+    g.fillText(label, 40, y);
+    g.textAlign = 'right';
+    g.fillStyle = r.out ? 'rgba(246,239,221,.32)' : '#e8b04b';
+    g.fillText(r.out ? '—' : r.price, 472, y);
+    g.textAlign = 'left';
+  });
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** Brushed stainless, for the machines and the counter. */
+export const steel = () => make('steel', 256, (g, S) => {
+  g.fillStyle = '#c6ccd0'; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 900; i++) {
+    g.strokeStyle = `rgba(${rnd(150, 255) | 0},${rnd(150, 255) | 0},${rnd(155, 255) | 0},${rnd(0.03, 0.14)})`;
+    g.lineWidth = rnd(0.5, 1.6);
+    const y = rnd(0, S);
+    g.beginPath(); g.moveTo(0, y); g.lineTo(S, y + rnd(-1, 1)); g.stroke();
+  }
+});
+
+/** The chequer-plate floor every one of these trucks has. */
+export const chequer = () => make('chequer', 256, (g, S) => {
+  g.fillStyle = '#6f675c'; g.fillRect(0, 0, S, S);
+  const n = 8, c = S / n;
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+    if ((i + j) % 2) { g.fillStyle = 'rgba(255,255,255,.07)'; g.fillRect(i * c, j * c, c, c); }
+    g.strokeStyle = 'rgba(0,0,0,.18)'; g.lineWidth = 1; g.strokeRect(i * c, j * c, c, c);
+  }
+  for (let i = 0; i < 400; i++) {
+    g.fillStyle = `rgba(0,0,0,${rnd(0.02, 0.09)})`;
+    g.beginPath(); g.arc(rnd(0, S), rnd(0, S), rnd(1, 4), 0, 7); g.fill();
+  }
+});
 
 /** Hair, as a cap that sits over the top of the head sphere. */
 export const HAIR = [0x2b1d16, 0x4a3324, 0x6b4a2c, 0x8a6a3e, 0xb99a63, 0x9a9a98, 0x1a1512, 0xc0562e];
