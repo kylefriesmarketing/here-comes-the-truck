@@ -335,6 +335,62 @@ if (c.hash === a.hash) bad(`seeds 999 and 1000 produced identical runs — the s
   console.log(`legendaries:     ${D.LEGENDARIES.length}, all floors and all lift something (${lifts.join(', ')}), order-independent`);
 }
 {
+  // ⚠️ THE TRUCK IS A PLACE. Every station must be standable-at, reachable, and
+  // UNAMBIGUOUS — the aisle is 1.44 m wide with stations down both walls, so several sit
+  // inside `reach` at once and picking the nearest made you sit in the driver's seat when
+  // you meant to open the freezer. Facing decides it. Prove every station can be selected.
+  const g = new Game({ seed: 51 });
+  g.act('interact');                     // stand up out of the seat
+  if (g.crew.seated) bad('could not get out of the driver\'s seat');
+  const unreachable = [];
+  for (const st of D.STATIONS) {
+    const c = new Game({ seed: 51 });
+    c.crew.seated = false;
+    // stand in the aisle beside it, facing it
+    c.crew.x = Math.max(D.CREW.aisle.x0, Math.min(D.CREW.aisle.x1, st.x));
+    c.crew.z = Math.max(D.CREW.aisle.z0, Math.min(D.CREW.aisle.z1, st.z));
+    c.crew.yaw = Math.atan2(st.x - c.crew.x, st.z - c.crew.z);
+    const got = c.stationNear();
+    if (!got || got.id !== st.id) unreachable.push(`${st.id}${got ? ' -> ' + got.id : ' -> none'}`);
+  }
+  console.log(`the stations:    ${D.STATIONS.length - unreachable.length}/${D.STATIONS.length} selectable by standing at them and looking`);
+  if (unreachable.length) bad(`stations you cannot select: ${unreachable.join(', ')}`);
+
+  // ONE PAIR OF HANDS — you carry exactly one thing
+  const h = new Game({ seed: 52 });
+  h.act('interact');
+  const bin = D.STATION_BY_ID.bin_bomb;
+  h.crew.x = D.CREW.aisle.x1; h.crew.z = bin.z; h.crew.yaw = Math.atan2(bin.x - h.crew.x, 0);
+  if (!h.act('interact').ok) bad('could not take a bomb pop from its bin');
+  if (h.crew.hands !== 'bomb') bad(`took the wrong thing: ${h.crew.hands}`);
+  const second = h.act('interact');
+  if (second.ok) bad('picked up a SECOND item — there is only one pair of hands');
+  console.log(`your hands:      one item at a time (took ${h.crew.hands}, second grab refused)`);
+
+  // ⚠️ AND YOU CANNOT DRIVE FROM THE BACK OF YOUR OWN TRUCK
+  const dcheck = new Game({ seed: 53 });
+  dcheck.act('interact');                // out of the seat
+  const x0 = dcheck.truck.x;
+  for (let i = 0; i < 60 * 5; i++) dcheck.step(FIXED, { throttle: 1, steer: 0 });
+  if (Math.abs(dcheck.truck.x - x0) > 0.5) bad('the truck drove itself with nobody in the seat');
+  else console.log(`the seat:        controls are dead while you are in the back`);
+}
+{
+  // ⚠️ NO YARD PROP MAY STAND IN THE ROAD. Kyle's report was literally "there are trees
+  // in the road": placement double-counted the house's centre-to-face offset, so trees
+  // landed 0.2 m from the street centreline and every mailbox sat on the white line.
+  for (const depth of [4.2, 4.6, 5.4]) {
+    const b = HP.yardBand(depth);
+    const nearestToStreet = b.centre - b.far;      // metres from the street centreline
+    if (nearestToStreet <= HP.XS.walkOut) bad(`yard band reaches the pavement at depth ${depth} (${nearestToStreet.toFixed(2)} m from centreline, pavement starts at ${HP.XS.walkOut})`);
+    if (nearestToStreet <= HP.XS.roadHalf) bad(`YARD PROPS WOULD STAND IN THE ROAD at depth ${depth} — ${nearestToStreet.toFixed(2)} m from the centreline, road is +/-${HP.XS.roadHalf}`);
+    if (b.near >= b.far) bad(`yard band is inverted at depth ${depth}`);
+    if (b.centre - b.kerb !== HP.XS.kerb) bad(`the path would not end at the kerb at depth ${depth}`);
+  }
+  const bb = HP.yardBand();
+  console.log(`the yard:        props sit ${(bb.centre - bb.far).toFixed(1)}-${(bb.centre - bb.near).toFixed(1)} m from the centreline (road ends at ${HP.XS.roadHalf}, pavement at ${HP.XS.walkOut})`);
+}
+{
   // per-item melt: a tough bar must outlast a soft one as the box warms
   const tough = D.softBelow(0.85), weak = D.softBelow(0.30);
   console.log(`melt:            a 0.85-melt item softens at cold ${tough.toFixed(3)}, a 0.30-melt at ${weak.toFixed(3)}`);

@@ -70,7 +70,8 @@ button{font-family:var(--ui-serif);cursor:pointer;border:0}
 #serve{position:fixed;left:50%;bottom:1.2rem;transform:translateX(-50%);z-index:40;
   width:min(46rem,94vw);pointer-events:auto}
 #said{font-size:1.35rem;margin-bottom:.1rem;line-height:1.35}
-#whosaid{font-size:.76rem;opacity:.55;margin-bottom:.7rem;letter-spacing:.04em}
+#whosaid{font-size:.76rem;opacity:.55;margin-bottom:.5rem;letter-spacing:.04em}
+#hands{font-size:.86rem;color:var(--pencil);margin-bottom:.5rem;min-height:1.1em}
 #menu{display:flex;gap:.4rem;flex-wrap:wrap}
 #menu button{flex:1 1 8rem;background:var(--paper2);padding:.5rem .5rem;border-radius:3px;
   font-size:.86rem;text-align:left;line-height:1.35;box-shadow:0 2px 0 #0002}
@@ -191,7 +192,8 @@ button{font-family:var(--ui-serif);cursor:pointer;border:0}
 <div id="serve" class="card hide">
   <div id="said"></div>
   <div id="whosaid"></div>
-  <div id="menu"></div>
+  <div id="hands"></div>
+  <div id="menu" class="hide"></div>
   <div id="pay" class="hide"></div>
 </div>
 
@@ -205,9 +207,10 @@ button{font-family:var(--ui-serif);cursor:pointer;border:0}
      the truck's yours now, and so is the note on it.</p>
   <button class="big" id="start">start the engine</button>
   <div class="keys">
-    <b>W A S D</b> drive &nbsp;·&nbsp; <b>SPACE</b> hold for the song &nbsp;·&nbsp; <b>E</b> park / pull away<br>
-    <b>Q</b> the window &nbsp;·&nbsp; <b>1–9</b> serve &nbsp;·&nbsp; <b>B</b> the churn bay in the back<br>
-    <b>TAB</b> the clipboard &nbsp;·&nbsp; <b>ENTER</b> correct change &nbsp;·&nbsp; <b>M</b> mute
+    <b>W A S D</b> drive, or walk about the truck when you're out of the seat<br>
+    <b>MOUSE</b> look &nbsp;·&nbsp; <b>E</b> use whatever you're facing &nbsp;·&nbsp; <b>F</b> put it back<br>
+    <b>SPACE</b> hold for the song &nbsp;·&nbsp; <b>Q</b> the window &nbsp;·&nbsp; <b>TAB</b> the clipboard &nbsp;·&nbsp; <b>M</b> mute<br>
+    <span style="opacity:.7">get out of the seat to work the back. everything is a place you walk to.</span>
   </div>
   <div class="foot">a DIRTY BOY DEVS game</div>
 </div>

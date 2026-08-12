@@ -36,6 +36,12 @@ export class Game {
       v: 0, steer: 0, parked: false,
     };
 
+    // ⚠️ THE CREW RIDE IN TRUCK-LOCAL SPACE. x/z are inside the truck, not in the world,
+    // so when the truck moves they move with it for free — no re-parenting, no drift, and
+    // no chance of the player being left standing in the road at 9 m/s. `seated` means
+    // they are at the wheel; standing means they are working the back.
+    this.crew = { x: D.STATIONS[0].x, z: D.CREW.seatZ, yaw: 0, seated: true, hands: null };
+
     this.cold = D.COLD.full;
     this.cash = opts.cash ?? D.ECON.startCash;
     this.drawer = 0;
@@ -154,11 +160,65 @@ export class Game {
   }
 
   // ---- the step -----------------------------------------------------------
+  // ---- the crew, in truck-local space ---------------------------------------
+  /** Where a truck-local point is in the world right now. */
+  toWorld(lx, lz) {
+    const t = this.truck, s = Math.sin(t.yaw), c = Math.cos(t.yaw);
+    // local +z is forward (s,c); local +x is the truck's LEFT, which is (c,-s)
+    return { x: t.x + lz * s + lx * c, z: t.z + lz * c - lx * s };
+  }
+  /** The crew's world position and facing. The camera hangs off this. */
+  crewWorld() {
+    const p = this.toWorld(this.crew.x, this.crew.z);
+    return { x: p.x, z: p.z, yaw: this.truck.yaw + this.crew.yaw };
+  }
+
+  /**
+   * The station you could use from where you're standing — or null.
+   *
+   * ⚠️ DIRECTIONAL, not just nearest. The aisle is 1.44 m wide and the stations line both
+   * walls, so at any point in the truck three or four of them are inside `reach` at once.
+   * Picking the nearest meant reaching for the freezer and sitting down in the driver's
+   * seat instead. You must be FACING a station to use it, which is both how first-person
+   * interaction actually works and what makes the layout learnable.
+   */
+  stationNear() {
+    if (this.crew.seated) return D.STATION_BY_ID.seat;
+    const cr = this.crew, fs = Math.sin(cr.yaw), fc = Math.cos(cr.yaw);
+    let best = null, bestScore = -Infinity;
+    for (const s of D.STATIONS) {
+      const dx = s.x - cr.x, dz = s.z - cr.z;
+      const d = Math.hypot(dx, dz);
+      if (d > D.CREW.reach) continue;
+      const facing = d < 0.05 ? 1 : (dx * fs + dz * fc) / d;   // cos of the angle to it
+      if (facing < D.CREW.facing) continue;                    // it's behind you
+      const score = facing - d * 0.35;                         // prefer what you're looking at
+      if (score > bestScore) { bestScore = score; best = s; }
+    }
+    return best;
+  }
+
+  _walk(dt, input) {
+    const C = D.CREW, cr = this.crew;
+    if (cr.seated) return;
+    const fw = (input.walkF || 0), st = (input.walkS || 0);
+    if (!fw && !st) return;
+    // Move relative to where the crew is LOOKING, inside the truck's own frame.
+    // ⚠️ Same convention as everything else: forward = (sin, cos); the crew's RIGHT is
+    // (-cos, sin), so a positive strafe must subtract cos from x.
+    const s = Math.sin(cr.yaw), c = Math.cos(cr.yaw);
+    const dx = (fw * s - st * c) * C.walkSpeed * dt;
+    const dz = (fw * c + st * s) * C.walkSpeed * dt;
+    cr.x = Math.max(C.aisle.x0, Math.min(C.aisle.x1, cr.x + dx));
+    cr.z = Math.max(C.aisle.z0, Math.min(C.aisle.z1, cr.z + dz));
+  }
+
   /** One fixed sim step. `input` = { throttle -1..1, brake 0..1, steer -1..1 }. */
   step(dt, input) {
     if (this.over) return;
     this.frame++;
     const i = input || {};
+    this._walk(dt, i);
     this._drive(dt, i);
     this._songTick(dt);
     this._people(dt);
@@ -167,6 +227,9 @@ export class Game {
 
   _drive(dt, input) {
     const T = D.TRUCK, tr = this.truck;
+    // ⚠️ You cannot drive from the back of your own truck. If nobody is in the seat the
+    // controls are dead — which is what makes sitting down a real, deliberate verb.
+    if (!this.crew.seated) { input = { steer: 0, throttle: 0, brake: 1 }; }
 
     // The wheel turns toward your input at a real rate — it does not teleport.
     // ⚠️⚠️ THE MINUS SIGN IS THE WHOLE THING. `D` / steer = +1 must turn RIGHT, and right
@@ -580,6 +643,90 @@ export class Game {
     return { ok: true };
   }
 
+  /**
+   * ⚠️ ONE BUTTON. Overcooked runs its entire game on a movement stick and a single
+   * interact key — the same button collects an ingredient, works a machine, plates the
+   * dish and delivers it. What it does here depends only on WHERE YOU ARE STANDING, so
+   * the skill is knowing your own truck rather than reading a menu.
+   */
+  _act_interact() {
+    const st = this.stationNear();
+    if (!st) return { ok: false, msg: 'nothing within reach' };
+    const cr = this.crew;
+
+    // ⚠️ THE SEAT IS WHERE PARKING AND PULLING AWAY LIVE. There is no park button: you
+    // stop, you get out of the chair, and that IS parking. And sitting back down is
+    // exactly where the mirror ritual belongs — you check it as you settle in to drive,
+    // which is when a real driver checks it. One verb, in the place it actually happens.
+    if (st.kind === 'seat') {
+      if (cr.seated) {
+        if (Math.abs(this.truck.v) > 0.6) return { ok: false, msg: 'stop the truck first' };
+        if (!this.truck.parked) this._act_park();
+        cr.seated = false; cr.z = D.CREW.aisle.z1 - 0.1; cr.yaw = Math.PI;
+        this.cb.seat && this.cb.seat(false);
+        return { ok: true, seated: false, parked: true };
+      }
+      if (this.truck.parked) {
+        const r = this._act_depart();          // the mirror can refuse this
+        if (!r.ok) return r;
+      }
+      cr.seated = true; cr.x = st.x; cr.z = D.CREW.seatZ; cr.yaw = 0;
+      this.cb.seat && this.cb.seat(true);
+      return { ok: true, seated: true };
+    }
+    if (st.kind === 'clip') { this.cb.openClip && this.cb.openClip(); return { ok: true, open: 'clipboard' }; }
+    if (st.kind === 'churn') { this.cb.openBay && this.cb.openBay(); return { ok: true, open: 'bay' }; }
+
+    // --- picking something up. ONE PAIR OF HANDS. ---
+    if (st.kind === 'take' || st.kind === 'takeNew') {
+      if (cr.hands) return { ok: false, msg: `your hands are full — ${this.labelOf(cr.hands)}` };
+      let key = st.item;
+      if (st.kind === 'takeNew') {
+        const f = this.invented.find(x => (this.stock[x.key] || 0) > 0);
+        if (!f) return { ok: false, msg: 'nothing in that tub yet' };
+        key = f.key;
+      }
+      if ((this.stock[key] || 0) <= 0) return { ok: false, msg: "you're out of those" };
+      cr.hands = key;
+      this.cb.took && this.cb.took(key);
+      return { ok: true, took: key, label: this.labelOf(key) };
+    }
+
+    // --- the window ---
+    if (st.kind === 'window') {
+      if (!this.windowOpen) return { ok: false, msg: 'the window is shut' };
+      const p = this.serving;
+      if (!p) return { ok: false, msg: 'nobody at the window' };
+      if (p.stage === 'ask') {
+        if (!cr.hands) return { ok: false, msg: 'you have nothing in your hands' };
+        const r = this.act('serve', cr.hands);
+        // it leaves your hands whether they liked it or not — you handed it over
+        if (r.ok || r.wrong) cr.hands = null;
+        return r;
+      }
+      if (p.stage === 'pay') return this.act('change', D.changeDue(p.tender, p.price));
+      if (p.stage === 'short') return { ok: false, msg: 'they are short — let it go, or not', decide: true };
+    }
+    return { ok: false, msg: 'nothing to do here' };
+  }
+
+  /** Put back whatever is in your hands. */
+  _act_drop() {
+    if (!this.crew.hands) return { ok: false, msg: 'your hands are empty' };
+    this.crew.hands = null;
+    return { ok: true };
+  }
+
+  labelOf(key) { const it = this.itemOf(key); return it ? it.label : key; }
+
+  /** Which station in the truck gives you this item. The UI's hint and the bot both read it. */
+  stationFor(key) {
+    const s = D.STATIONS.find(x => x.item === key);
+    if (s) return s;
+    if (this.invented.some(f => f.key === key)) return D.STATION_BY_ID.tub_new;
+    return null;
+  }
+
   /** Serve the person at the window the given item. Reading their order is the skill. */
   _act_serve(key) {
     const p = this.serving;
@@ -829,7 +976,8 @@ export class Game {
   snapshot() {
     return {
       v: D.VERSION, seed: this.seed, rs: this._rs, day: this.day, t: this.t,
-      truck: { ...this.truck }, cold: this.cold, cash: this.cash, drawer: this.drawer,
+      truck: { ...this.truck }, crew: { ...this.crew },
+      cold: this.cold, cash: this.cash, drawer: this.drawer,
       rep: this.rep, noiseHeat: this.noiseHeat, tickets: this.tickets,
       noteMisses: this.noteMisses, song: this.song, windowOpen: this.windowOpen,
       stock: { ...this.stock }, prices: { ...this.prices }, pid: this._pid,
@@ -851,7 +999,9 @@ export class Game {
 
   restore(s) {
     this._rs = s.rs >>> 0; this.day = s.day; this.t = s.t;
-    this.truck = { ...s.truck }; this.cold = s.cold; this.cash = s.cash;
+    this.truck = { ...s.truck };
+    if (s.crew) this.crew = { ...s.crew };
+    this.cold = s.cold; this.cash = s.cash;
     this.drawer = s.drawer; this.rep = s.rep; this.noiseHeat = s.noiseHeat;
     this.tickets = s.tickets; this.noteMisses = s.noteMisses;
     this.song = s.song; this.windowOpen = s.windowOpen;
@@ -939,6 +1089,7 @@ export function soakRun(seed, opts = {}) {
   // regulars were served zero times in 24 days purely because of where they sat in the
   // rhythm. A route driver's stops are not on a metronome.
   let guard = 0, lastT = -1, stopT = 0, stuckT = 0, sinceStop = 999, commit = null, churned = false;
+  let wantKey = null, wantFor = -1;
   // ⚠️ SMALL — just enough to clear the spot you're standing in. It is the AHEAD filter,
   // not this distance, that stops the bot shuffling in place. At 22-48 m the truck drove
   // past everyone who came out WHILE IT WAS PARKED (they are behind it by the time it
@@ -1015,6 +1166,17 @@ export function soakRun(seed, opts = {}) {
     if (tr.v < want - 0.15) input.throttle = 0.95;
     else if (tr.v > want + 0.15) input.brake = clamp((tr.v - want) * 0.6, 0.15, 1);
 
+    // Walk the crew toward a station inside the truck. Setting crew.yaw directly is the
+    // bot's "mouse" — the walk itself goes through the same input the player's keys feed.
+    const walkTo = (st) => {
+      const cr = g.crew;
+      const dx = st.x - cr.x, dz = st.z - cr.z, d = Math.hypot(dx, dz);
+      if (d > 0.02) cr.yaw = Math.atan2(dx, dz);   // ALWAYS face it — stationNear is directional
+      if (d < D.CREW.reach * 0.7) return true;
+      input.walkF = 1;
+      return false;
+    };
+
     if (tr.parked) {
       input.throttle = 0; input.brake = 0;
       stopT += FIXED;
@@ -1024,32 +1186,67 @@ export function soakRun(seed, opts = {}) {
       // ⚠️ NOT `continue` — the g.step() that advances the sim is at the BOTTOM of this
       // loop, so skipping to the next iteration freezes time, the churn never finishes,
       // and every cell dies on the guard having sold nothing.
+      // ⚠️ THE BOT WALKS THE TRUCK, exactly like the player. It would be far easier to let
+      // it call act('serve') from the driver's seat — and that would quietly stop the
+      // trials measuring this game at all, because now that the interior is a place,
+      // WALKING TIME IS A REAL ECONOMIC COST. A bot that teleports measures a truck
+      // nobody plays. (Victory Lap trap 11, pointed the other way.)
+      //
+      // ⚠️ `leaving` has to be decided BEFORE standing up. Without it the bot stood up at
+      // the top of every parked frame and tried to sit down at the bottom of the same
+      // frame — it parked once, fought itself for the entire day, and departed zero times.
+      const leaving = !g.churning && (stopT > 18 + patience * 40 || (g.queueLen() === 0 && stopT > 12));
+      if (!leaving && g.crew.seated) act('interact');     // get out of the seat and go to work
+
       if (P.churn && !churned && !g.churning) { act('churn', P.churn); churned = true; }
       if (!g.churning && !g.windowOpen) act('window', true);
       // The law says silence the instant you're stationary — but every stop is a gamble:
       // a few more seconds of song pulls another kid off the next block. songGrace is
       // exactly how many seconds of that bribe this policy takes.
       if (g.song && stopT >= songGrace) act('song', false);
-      const p = g.churning ? null : g.serving;
+      const p = leaving ? null : (g.churning ? null : g.serving);
       if (p) {
+        // decide ONCE per customer what we're going to hand them, then go and get it
+        if (wantKey === null || wantFor !== p.id) {
+          wantFor = p.id;
+          wantKey = (p.want && (alwaysRight || brng() > 0.22)) ? p.want : bpick(g.menu()).key;
+        }
         if (p.stage === 'ask') {
-          // sometimes hand over the wrong thing — the order was in kid
-          const key = (p.want && (alwaysRight || brng() > 0.22)) ? p.want : bpick(D.MENU).key;
-          const r = act('serve', key);
-          if (!r.ok && (r.impossible || r.balked)) { p.state = 'leaving'; g.serving = null; }
+          if (g.crew.hands !== wantKey) {
+            if (g.crew.hands) act('drop');
+            else {
+              const st = g.stationFor(wantKey);
+              if (!st) wantKey = p.want;
+              else if (walkTo(st)) { if (!act('interact').ok) wantKey = p.want; }
+            }
+          } else if (walkTo(D.STATION_BY_ID.window)) {
+            const r = act('interact');
+            if (!r.ok && (r.impossible || r.balked)) { p.state = 'leaving'; g.serving = null; }
+            wantKey = null;
+          }
         } else if (p.stage === 'pay') {
-          const due = D.changeDue(p.tender, p.price);
-          act('change', greed > 0.8 && brng() > 0.6 ? Math.max(0, due - 25) : due);
+          if (walkTo(D.STATION_BY_ID.window)) {
+            const due = D.changeDue(p.tender, p.price);
+            act('change', greed > 0.8 && brng() > 0.6 ? Math.max(0, due - 25) : due);
+            wantKey = null;
+          }
         } else if (p.stage === 'short') {
-          act(brng() < 0.62 ? 'mercy' : 'refuse');
+          if (walkTo(D.STATION_BY_ID.window)) { act(brng() < 0.62 ? 'mercy' : 'refuse'); wantKey = null; }
         }
-      } else if (!g.churning && (stopT > 18 + patience * 40 || (g.queueLen() === 0 && stopT > 12))) {
+      } else if (leaving) {
         act('window', false);
-        if (act('depart').ok) {
-          act('song', true); stopT = 0; sinceStop = 0; commit = null; bot.departs++;
-          nextGap = 8 + brng() * 12;
+        // ⚠️ you have to get back in the seat before you can drive away, and sitting down
+        // is what performs the depart (and runs the mirror check)
+        if (!g.crew.seated) {
+          if (walkTo(D.STATION_BY_ID.seat)) {
+            const r = act('interact');
+            if (!r.ok) bot.mirrorHeld++;
+            else if (!g.truck.parked) {
+              act('song', true); stopT = 0; sinceStop = 0; commit = null; bot.departs++;
+              nextGap = 8 + brng() * 12;
+            }
+          }
         }
-        else bot.mirrorHeld++;
         // else: the mirror is holding it. Wait for them to move. Nothing bad happens.
       }
     } else {

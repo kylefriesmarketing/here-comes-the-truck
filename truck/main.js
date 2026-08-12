@@ -87,8 +87,6 @@ let G = null, view = null, ui = null;
 let running = false, accum = 0, last = performance.now() / 1000, wall = 0;
 const input = { throttle: 0, brake: 0, steer: 0 };
 const keys = {};
-let camMode = 'cab';   // 'cab' while driving, 'window' when you slide it open
-let camBlend = 0;
 
 function newDay() {
   G = new Game({
@@ -109,7 +107,11 @@ function newDay() {
       bump: (v) => { if (v > 3) sfx.thunk(); },
       bought: (u) => { sfx.ding(); ui.hint(`${u.name}. ${u.sub}.`, 6000); },
       park: () => sfx.hatch(),
-      window: (on) => { sfx.slide(); camMode = on ? 'window' : 'cab'; },
+      window: () => sfx.slide(),
+      seat: (on) => { sfx.hatch(); if (!on) ui.bay(false); },
+      took: (k) => sfx.hatch(),
+      openBay: () => ui.bay(true),
+      openClip: () => ui.clipboard(true),
       churnStart: (r) => { sfx.hatch(); ui.hint('churning ' + D.flavourName(r) + '. this is costing you the afternoon.', 5000); },
       churnDone: (f) => { sfx.ding(); ui.hint(`${D.CHURN.batch} of "${f.label}" in the box. go and sell them.`, 7000); },
       legendary: (l) => { sfx.coin(); ui.hint(`— ${l.name} —  you found one of cy's.`, 9000); },
@@ -119,7 +121,7 @@ function newDay() {
     },
   });
   view = new View(renderer);
-  camBlend = 0; camMode = 'cab';
+  camNow.set = false; lookPitch = -0.05;
   ui.g = () => G;
   sfx.ambStart(); sfx.engineStart();
   ui.hint('hold SPACE and drive. they come out when they hear you.', 7000);
@@ -154,20 +156,16 @@ addEventListener('keydown', (e) => {
   if (e.code === 'Space') { e.preventDefault(); if (!e.repeat && G && !G.over) G.act('song', true); }
   if (!running || !G || G.over) return;
 
-  if (e.code === 'KeyE') {
-    const r = G.truck.parked ? G.act('depart') : G.act('park');
-    if (!r.ok && r.blocker) ui.hint('somebody small is right in front of you. wait for them.');
-    else if (!r.ok && r.msg === 'still rolling') ui.hint('you have to actually stop first.');
-  }
   if (e.code === 'KeyQ') {
     const r = G.act('window', !G.windowOpen);
     if (!r.ok) ui.hint('park first. you cannot serve out of a moving truck.');
   }
-  if (e.code === 'KeyB') {
-    if (!G.truck.parked) ui.hint('park first — the bay is in the back.');
-    else if (G.windowOpen) ui.hint('shut the window. you cannot serve and churn at once.');
-    else { camMode = camMode === 'bay' ? 'cab' : 'bay'; ui.bay(camMode === 'bay'); }
+  // ⚠️ ONE INTERACT KEY, dispatched by where you are standing and what you are facing.
+  if (e.code === 'KeyE') {
+    const r = G.act('interact');
+    if (!r.ok && r.msg) ui.hint(r.msg);
   }
+  if (e.code === 'KeyF') { G.act('drop'); }
   if (e.code === 'Tab') { e.preventDefault(); ui.clipboard(); }
   if (e.code === 'KeyM') { save.settings.muted = !save.settings.muted; sfx.muted(save.settings.muted); persist(); }
   if (e.code === 'Enter' && G.serving) {
@@ -186,6 +184,30 @@ addEventListener('keyup', (e) => {
   if (KEYMAP[e.code]) keys[KEYMAP[e.code]] = 0;
   if (e.code === 'Space' && G && !G.over) G.act('song', false);
 });
+
+// ---------------------------------------------------------------------------
+// MOUSE LOOK. ⚠️ The mouse turns the CREW, not the camera — the camera is only ever the
+// crew's eyes. And when you're in the seat it is CLAMPED: you can glance at your mirror
+// or out of the side window, but you cannot end up driving down Maple facing backwards.
+// ---------------------------------------------------------------------------
+const SEATED_LOOK = 1.15;                 // radians either side of straight ahead
+function lookBy(dx, dy) {
+  if (!G || G.over) return;
+  const cr = G.crew;
+  cr.yaw -= dx * 0.0023;
+  if (cr.seated) cr.yaw = Math.max(-SEATED_LOOK, Math.min(SEATED_LOOK, cr.yaw));
+  else { while (cr.yaw > Math.PI) cr.yaw -= Math.PI * 2; while (cr.yaw < -Math.PI) cr.yaw += Math.PI * 2; }
+  lookPitch = Math.max(-0.95, Math.min(0.75, lookPitch - dy * 0.0023));
+}
+renderer.domElement.addEventListener('mousedown', () => {
+  if (running && document.pointerLockElement !== renderer.domElement) renderer.domElement.requestPointerLock?.();
+});
+addEventListener('mousemove', (e) => {
+  if (!running) return;
+  if (document.pointerLockElement === renderer.domElement) lookBy(e.movementX, e.movementY);
+  else if (e.buttons & 2) lookBy(e.movementX, e.movementY);   // RMB-drag fallback, no lock
+});
+addEventListener('contextmenu', (e) => { if (running) e.preventDefault(); });
 addEventListener('blur', () => { for (const k in keys) keys[k] = 0; if (G && !G.over) G.act('song', false); });
 
 // ---------------------------------------------------------------------------
@@ -193,65 +215,35 @@ addEventListener('blur', () => { for (const k in keys) keys[k] = 0; if (G && !G.
 // ⚠️ CONVENTION: the truck's forward is (sin yaw, cos yaw) = local +Z, so the camera's
 // yaw is the truck's yaw + PI, and the truck's RIGHT (where the window is) is local -X.
 // ---------------------------------------------------------------------------
-// ⚠️ THREE POSITIONS, one easing rig. This used to be a two-way blend between the cab and
-// the window driven by a single 0..1 float; adding the churn bay as a third made that
-// unrepresentable. Compute the TARGET pose for whatever mode is current, then ease the
-// live pose toward it — adding a fourth position later costs one entry, not a rewrite.
-const camNow = { x: 0, y: 1.84, z: 0, yaw: 0, pitch: 0, fov: 72, set: false };
-
-function camTarget() {
-  const t = G.truck;
-  const f = { x: Math.sin(t.yaw), z: Math.cos(t.yaw) };
-  const r = { x: -Math.cos(t.yaw), z: Math.sin(t.yaw) };
-
-  if (camMode === 'window') {
-    // You step across and you are looking OUT at them. Kids at your window, from inside
-    // your truck, in four o'clock light — this shot is the game's whole poster.
-    // ⚠️ INSIDE the frame (half-width is 0.975), so your own sill and jambs edge the shot.
-    const o = D.TRUCK.wide / 2 - 0.30;
-    const p = { x: t.x + r.x * o - f.x * 0.1, y: 1.62, z: t.z + r.z * o - f.z * 0.1 };
-    // ⚠️ Look at whoever is actually TALKING. A fixed perpendicular yaw is close but not
-    // right — the head of the queue stops anywhere within reachWindow of the mark, which
-    // puts them ~20 degrees off centre and the poster shot has a person at its edge.
-    const q = G.serving || G.queueSlot(0);
-    return { ...p, yaw: Math.atan2(-(q.x - p.x), -(q.z - p.z)), pitch: -0.10, fov: 64 };
-  }
-  if (camMode === 'bay') {
-    // Park, turn around, three steps. You are standing in the back facing the machine.
-    return {
-      x: t.x + f.x * 0.62, y: 1.58, z: t.z + f.z * 0.62,
-      yaw: t.yaw, pitch: -0.14, fov: 70,      // yaw = t.yaw looks along -forward
-    };
-  }
-  // the cab: behind the windscreen, a little left of centre because that's the seat.
-  // ⚠️ SIT BACK. At 1.15 m forward the driver's nose is against the glass and the
-  // A-pillars and header eat most of the frame.
-  return {
-    x: t.x + f.x * 0.95 + r.x * -0.40, y: 1.84, z: t.z + f.z * 0.95 + r.z * -0.40,
-    yaw: t.yaw + Math.PI, pitch: -0.06,
-    fov: 72 + Math.min(1, Math.abs(t.v) / G.topSpeed()) * 6,   // a breath of FOV for speed
-  };
-}
+// ⚠️ ONE CAMERA: THE CREW'S OWN EYES. This was three hand-authored poses (cab, window,
+// bay) blended by a float, and every new place in the truck needed another one. Now the
+// truck is a space you stand in, so the camera is simply where you are standing and
+// which way you are looking — the poster shot at the window is what you SEE when you walk
+// to the window, not a scripted angle. Adding a place costs a station, not a camera mode.
+const FLOOR_Y = 0.62;                       // must match view.js's interior floor
+let lookPitch = -0.05;
+const camNow = { x: 0, y: 2.2, z: 0, yaw: 0, fov: 72, set: false };
 
 function placeCamera(dt) {
-  const tg = camTarget();
-  if (!camNow.set) { Object.assign(camNow, tg); camNow.set = true; }
-  const k = Math.min(1, dt * 5.0);
-  camNow.x += (tg.x - camNow.x) * k;
-  camNow.y += (tg.y - camNow.y) * k;
-  camNow.z += (tg.z - camNow.z) * k;
-  camNow.pitch += (tg.pitch - camNow.pitch) * k;
-  camNow.fov += (tg.fov - camNow.fov) * Math.min(1, dt * 3);
-  // ⚠️ always ease the SHORT way round, or a mode change across the +/-PI seam spins the
-  // camera the long way through the whole world
-  let d = tg.yaw - camNow.yaw;
+  const w = G.crewWorld();
+  const eyeY = FLOOR_Y + D.CREW.eye;
+  const yaw = w.yaw + Math.PI;              // three.js looks down -Z; we face (sin,cos)
+  const fov = 72 + (G.crew.seated ? Math.min(1, Math.abs(G.truck.v) / G.topSpeed()) * 6 : -4);
+
+  if (!camNow.set) { camNow.x = w.x; camNow.z = w.z; camNow.y = eyeY; camNow.yaw = yaw; camNow.fov = fov; camNow.set = true; }
+  // Position snaps (you ARE there); only the head-bob smoothing and fov ease.
+  camNow.x = w.x; camNow.z = w.z;
+  camNow.y += (eyeY - camNow.y) * Math.min(1, dt * 8);
+  camNow.fov += (fov - camNow.fov) * Math.min(1, dt * 3);
+  // ⚠️ ease the SHORT way round, or crossing the +/-PI seam spins the head through 360
+  let d = yaw - camNow.yaw;
   while (d > Math.PI) d -= Math.PI * 2;
   while (d < -Math.PI) d += Math.PI * 2;
-  camNow.yaw += d * k;
+  camNow.yaw += d * Math.min(1, dt * 22);
 
   camera.position.set(camNow.x, camNow.y, camNow.z);
   camera.rotation.y = camNow.yaw;
-  camera.rotation.x = camNow.pitch;
+  camera.rotation.x = lookPitch;
   if (Math.abs(camera.fov - camNow.fov) > 0.05) { camera.fov = camNow.fov; camera.updateProjectionMatrix(); }
 }
 
@@ -260,11 +252,19 @@ function placeCamera(dt) {
 // ---------------------------------------------------------------------------
 function tick(dtWall) {
   if (!G || G.over) return;
-  input.throttle = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
-  input.steer = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
-  input.brake = 0;
-  // S is brake first, reverse second — a van does not leap backwards off the throttle
-  if (keys.s && G.truck.v > 0.4) { input.brake = 1; input.throttle = 0; }
+  // ⚠️ THE SAME FOUR KEYS DRIVE OR WALK depending on whether you're in the seat. That is
+  // the whole point of the seat being a station: there is no mode button, there is a
+  // chair. Overcooked does its entire game on a movement stick and one interact key.
+  input.throttle = 0; input.steer = 0; input.brake = 0; input.walkF = 0; input.walkS = 0;
+  if (G.crew.seated) {
+    input.throttle = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+    input.steer = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+    // S is brake first, reverse second — a van does not leap backwards off the throttle
+    if (keys.s && G.truck.v > 0.4) { input.brake = 1; input.throttle = 0; }
+  } else {
+    input.walkF = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+    input.walkS = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+  }
 
   accum += Math.min(dtWall, 0.25);          // never let a background tab dump 40 s in one go
   let n = 0;
@@ -282,14 +282,27 @@ function draw(dtWall) {
   ui.serve(G);
   if (ui.clipOpen) ui.drawClip();
 
-  // the contextual prompt. The truck is the interface, so it tells you what it wants.
+  // ⚠️ THE PROMPT IS NOW DIEGETIC: it names the thing in front of you and what E does to
+  // it. The truck is the interface, so the interface tells you about the truck.
   let pr = '';
-  if (G.over) pr = '';
-  else if (G.truck.parked && !G.windowOpen) pr = 'Q — slide the window open';
-  else if (G.truck.parked && G.windowOpen && !G.serving) pr = 'Q to close up · E to pull away';
-  else if (G.truck.parked && camMode === 'bay') pr = 'B — back to the cab';
-  else if (G.truck.parked) pr = 'Q — the window · B — the churn bay in the back';
-  else if (!G.truck.parked && G.people.some(p => p.state === 'kerb')) pr = 'somebody is waiting — stop and E to park';
+  if (!G.over) {
+    const st = G.stationNear();
+    const hands = G.crew.hands ? `carrying ${G.labelOf(G.crew.hands)}` : '';
+    if (G.crew.seated) {
+      pr = Math.abs(G.truck.v) > 0.6 ? '' : 'E — get up and work the back';
+    } else if (st) {
+      let verb = st.verb;
+      if (st.kind === 'window') {
+        const p = G.serving;
+        verb = !G.windowOpen ? 'Q to slide it open'
+          : !p ? 'nobody at it yet'
+            : p.stage === 'ask' ? (G.crew.hands ? `hand over ${G.labelOf(G.crew.hands)}` : 'you have nothing in your hands')
+              : p.stage === 'pay' ? 'give them their change'
+                : 'they are short — decide';
+      } else if (st.kind === 'take' && G.crew.hands) verb = 'hands full — F to put it back';
+      pr = `${st.label} — E · ${verb}`;
+    } else pr = hands || 'W A S D to move about the truck';
+  }
   ui.setPrompt(pr);
 
   renderer.render(view.scene, camera);

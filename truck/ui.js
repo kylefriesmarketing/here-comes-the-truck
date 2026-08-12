@@ -28,9 +28,6 @@ export class UI {
     this.g = game; this.h = hooks;
     this.hintT = 0;
     this.clipOpen = false;
-    $('menu').onclick = (e) => {
-      const b = e.target.closest('button'); if (b && b.dataset.key) this.h.serve(b.dataset.key);
-    };
     $('pay').onclick = (e) => {
       const b = e.target.closest('button'); if (!b) return;
       if (b.dataset.change !== undefined) this.h.change(parseInt(b.dataset.change, 10));
@@ -165,24 +162,21 @@ export class UI {
     const panel = $('serve');
     if (!p || !g.windowOpen) { show(panel, false); this._servedId = null; return; }
     show(panel, true);
+    // what's in your hands, always visible while somebody is waiting
+    $('hands').textContent = g.crew.hands ? 'in your hands: ' + g.labelOf(g.crew.hands) : '';
 
     if (p.stage === 'ask') {
-      show($('pay'), false); show($('menu'), true);
+      // ⚠️ NO MENU BUTTONS. This used to be a row of DOM buttons, which quietly made the
+      // whole game a list you click — exactly the "management screen floating above the
+      // world" the bible forbids, and it threw away §7's cramped topology. You FETCH what
+      // they asked for: walk to the bin, take it, walk back. The panel only carries the
+      // order and the face, because those are things you read, not things you press.
+      show($('pay'), false); show($('menu'), false);
       $('said').textContent = '“' + p.said + '”';
       // ⚠️ THEY KNOW YOUR NAME, so you get to know theirs. A regular is never "a kid".
       $('whosaid').textContent = (p.who || (p.kid ? 'a kid' : 'a grown-up')) +
         (p.qty > 1 ? ' · two of them, the same as always' : '') +
         (p.wrongs ? ' · they are being patient about it' : '');
-      const ceiling = g.ceilingOf(p.block);
-      $('menu').innerHTML = g.menu().map((m, i) => {
-        const price = g.priceOf(m.key);
-        const out = (g.stock[m.key] || 0) <= 0;
-        const bonus = m.stats ? D.ceilingBonus(m.stats) : 0;
-        const tell = TELL[D.faceOf(D.priceReaction(ceiling + bonus, price))];
-        return `<button data-key="${m.key}" class="${out ? 'out' : ''}${m.invented ? ' mine' : ''}">
-          <span class="k">${i + 1}</span>${m.label}
-          <span class="p">${money(price)} · ${out ? 'all gone' : tell}</span></button>`;
-      }).join('');
 
     } else if (p.stage === 'pay') {
       show($('menu'), false); show($('pay'), true);

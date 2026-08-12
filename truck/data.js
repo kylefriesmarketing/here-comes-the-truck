@@ -16,11 +16,15 @@
 // you cannot turn while stopped, why it's tight at walking pace and wide at speed,
 // and why parking against a kerb feels like parking a van instead of nudging a token.
 // ---------------------------------------------------------------------------
+// ⚠️ A REAL STEP VAN, not FRESH CUT's 4.6 m background prop. You now WALK AROUND INSIDE
+// this thing, so it has to have an interior you can cross: 5.6 x 2.15 gives a ~5.2 m
+// aisle at 1.85 m wide. Real operators call it "the cramped, freezing reality" — cramped
+// is the feature, but a 4.6 m box with no floor to stand on is not a place.
 export const TRUCK = {
-  len: 4.6, wide: 1.95, high: 2.9,   // matches FRESH CUT's makeCar('icecream') box
-  wheelbase: 2.95,
-  axleFront: 1.5, axleRear: -1.45,   // local z of each axle, for the two collision circles
-  bodyR: 1.15,                        // collision circle radius at each axle
+  len: 5.6, wide: 2.15, high: 3.1,
+  wheelbase: 3.40,
+  axleFront: 1.90, axleRear: -1.70,  // local z of each axle, for the two collision circles
+  bodyR: 1.30,                        // collision circle radius at each axle
 
   accel: 3.2,          // m/s^2 at full throttle from a standstill
   accelFalloff: 0.72,  // fraction of top speed where accel starts tailing off
@@ -249,6 +253,60 @@ export const LAW = {
   ticketNoise: 5000, ticketSchool: 10000, ticketSpot: 5000,
   impoundAt: 40000,             // the ticket-judgment meter. Visible for twenty days.
 };
+
+// ---------------------------------------------------------------------------
+// THE TRUCK IS A PLACE YOU STAND IN (bible §4 and §7).
+//
+// §7: "The window is a deliberately cramped topology — freezer hatch, soft-serve spigot,
+// topping caddy, register, and the window itself all competing for one pair of hands.
+// That's Overcooked's real lesson: THE KITCHEN IS THE ANTAGONIST."
+//
+// So every item is a PLACE, not a menu row. Walking to the right one IS getting the order
+// right, and getting it wrong is walking to the wrong one. Overcooked does the whole game
+// on one movement stick and one interact button; so does this.
+//
+// ⚠️ THE LAYOUT DELIBERATELY VIOLATES THE KITCHEN WORK TRIANGLE. Overcooked's levels are
+// built to break it on purpose, because an efficient kitchen is not a game. The bars the
+// kids want are FORWARD-left, the soft serve the adults want is BACK-left, and the window
+// is between them — so a busy queue makes you walk the length of your own truck.
+//
+// Coordinates are TRUCK-LOCAL: +z forward, +x is the truck's LEFT (right = -localX, see
+// view.js). The crew rides in this frame, so when the truck moves they move with it for
+// free — no re-parenting, no drift.
+// ---------------------------------------------------------------------------
+export const CREW = {
+  walkSpeed: 1.55,          // m/s. You are squeezing past a freezer, not jogging.
+  eye: 1.62,
+  reach: 0.95,              // how close you must stand to use a station
+  facing: 0.35,             // and how squarely you must be looking at it (cos ~70 degrees)
+  aisle: { x0: -0.72, x1: 0.72, z0: -2.30, z1: 1.55 },   // where your feet may go
+  seatZ: 2.05,              // the seat is forward of the aisle; sitting teleports you there
+};
+
+export const STATIONS = [
+  // the driver's seat — sitting here IS driving. It is a station like any other.
+  { id: 'seat', label: "the driver's seat", verb: 'sit down and drive', x: 0.46, z: 1.95, kind: 'seat' },
+  { id: 'clipboard', label: 'the clipboard', verb: 'pick up the clipboard', x: -0.40, z: 1.85, kind: 'clip' },
+
+  // THE FREEZER CHEST — three bins, forward-left, lids you reach into. These are the
+  // lines children ask for, and they are the FURTHEST from the soft serve on purpose.
+  { id: 'bin_eyes', label: 'the character bars', verb: 'take one', x: 0.68, z: 1.15, kind: 'take', item: 'eyes' },
+  { id: 'bin_bomb', label: 'the bomb pops', verb: 'take one', x: 0.68, z: 0.50, kind: 'take', item: 'bomb' },
+  { id: 'bin_pop', label: 'the freeze pops', verb: 'take one', x: 0.68, z: -0.15, kind: 'take', item: 'pop' },
+
+  // THE WINDOW — on the kerb side, mid-truck, between the two ends you run between.
+  { id: 'window', label: 'the window', verb: 'hand it over', x: -0.68, z: -0.10, kind: 'window' },
+
+  // the scoop tub, further back down the left wall
+  { id: 'tub_scoop', label: 'the tub', verb: 'scoop one', x: 0.68, z: -0.90, kind: 'take', item: 'scoop' },
+  // whatever you invented comes out of the churn barrel's own tub
+  { id: 'tub_new', label: 'what you made', verb: 'take one', x: 0.68, z: -1.65, kind: 'takeNew' },
+  // THE SOFT-SERVE SPIGOT — back on the window side: the best margin in the game and the
+  // longest walk from the bars the children want. This is the work triangle, broken.
+  { id: 'spigot', label: 'the soft serve', verb: 'pull the handle', x: -0.68, z: -1.55, kind: 'take', item: 'cone' },
+  { id: 'churn', label: 'the churn machine', verb: 'work the machine', x: 0.10, z: -2.25, kind: 'churn' },
+];
+export const STATION_BY_ID = Object.fromEntries(STATIONS.map(s => [s.id, s]));
 
 // ---------------------------------------------------------------------------
 // THE CHURN BAY (bible §10) — the fourth pillar, "invent the treats".

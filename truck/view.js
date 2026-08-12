@@ -204,37 +204,45 @@ export class View {
     }
 
     // ---- the yard ----
-    // ⚠️ Kyle: "the yards need grass". The ground plane is grass-textured, so what a yard
-    // actually needs is THINGS ON IT — otherwise it reads as a lawn nobody lives on.
-    const front = d / 2;
+    // ⚠️⚠️ EVERYTHING OUT HERE IS PLACED AGAINST `YARD`, NOT AGAINST `front + <guess>`.
+    // The first version measured `runOut` from the house CENTRE to the kerb and then
+    // added it to `front`, which is ALREADY the centre-to-front offset — double-counting
+    // 2.3 m. Measured result: trees standing 0.2-1.9 m from the street centreline (the
+    // road is +/-2.5), hedges on the pavement, and every mailbox in the middle of the
+    // road. Kyle spotted it as "there are trees in the road".
+    // The front lawn is the ONLY strip yard props may occupy. The soak asserts it.
+    const YARD = HP.yardBand(d);
+    const front = YARD.face;                              // local z of this house's face
+    const inYard = (t) => YARD.near + (YARD.far - YARD.near) * t;   // t in 0..1
+
     // a hedge along the front, or shrubs by the door
     if (Math.random() < 0.45) {
       const hw = w * R(0.6, 1.0);
       const hedge = box(hw, R(0.7, 1.1), 0.6, P([0x3f6b32, 0x4a7a38, 0x36602c]));
-      hedge.position.set(R(-1, 1), 0.5, front + R(3.0, 4.2));
+      hedge.position.set(R(-1, 1), 0.5, inYard(R(0.55, 0.9)));
       hedge.castShadow = true; g.add(hedge);
     } else {
       for (const s of [-1, 1]) {
         if (Math.random() < 0.6) {
           const b = new THREE.Mesh(new THREE.SphereGeometry(R(0.4, 0.75), 8, 6),
             lam({ color: P([0x3f6b32, 0x4a7a38, 0x2f5a2a]) }));
-          b.position.set(s * R(1.1, 2.0), 0.45, front + R(0.7, 1.4));
+          b.position.set(s * R(1.1, 2.0), 0.45, inYard(R(0.02, 0.2)));
           b.scale.y = 0.8; b.castShadow = true; g.add(b);
         }
       }
     }
-    // a tree, on most of them
-    if (Math.random() < 0.62) this._tree(g, R(-w / 2 - 1.5, w / 2 + 1.5), front + R(4.5, 6.2));
+    // a tree, on most of them — on the VERGE, which is the far end of the lawn
+    if (Math.random() < 0.62) this._tree(g, R(-w / 2 - 1.5, w / 2 + 1.5), inYard(R(0.6, 0.95)));
     // flowers by the step
     if (Math.random() < 0.4) {
       for (let i = 0; i < 7; i++) {
         const f = box(0.12, 0.12, 0.12, P([0xe8637a, 0xf0c14a, 0xe8f0f4, 0xc47ae0]));
-        f.position.set(R(-1.6, 1.6), 0.3, front + R(0.6, 1.2)); g.add(f);
+        f.position.set(R(-1.6, 1.6), 0.3, inYard(R(0.0, 0.14))); g.add(f);
       }
     }
 
-    // the concrete path out to the kerb — replaces the flat grey plane
-    const runOut = HP.XS.houseFront + HP.XS.houseDepth / 2 - HP.XS.kerb;
+    // the concrete path, from the doorstep out to the kerb and no further
+    const runOut = YARD.kerb - front;
     const path = new THREE.Mesh(new THREE.PlaneGeometry(1.15, runOut),
       lam({ map: TX.tiled(TX.concrete(), 0.4, runOut / 3) }));
     path.rotation.x = -Math.PI / 2;
@@ -244,19 +252,20 @@ export class View {
     // a driveway on some, with a car on some of those
     if (Math.random() < 0.5) {
       const dx = (w / 2 + 1.4) * (Math.random() < 0.5 ? -1 : 1);
-      const dr = new THREE.Mesh(new THREE.PlaneGeometry(2.7, runOut + 1),
+      const dr = new THREE.Mesh(new THREE.PlaneGeometry(2.7, runOut),
         lam({ map: TX.tiled(TX.concrete(), 0.9, runOut / 3) }));
       dr.rotation.x = -Math.PI / 2;
       dr.position.set(dx, 0.03, front + runOut / 2);
       dr.receiveShadow = true; g.add(dr);
-      if (Math.random() < 0.5) this._parkedCar(g, dx, front + R(1.4, 3.0));
+      if (Math.random() < 0.5) this._parkedCar(g, dx, inYard(R(0.1, 0.5)));
     }
 
-    // the mailbox at the kerb
+    // the mailbox, standing ON the verge beside the path — not in the road
+    const mbz = YARD.far;
     const post = box(0.1, 1.0, 0.1, 0x6b5a44);
-    post.position.set(w / 2 + 0.9, 0.5, front + runOut - 0.5); g.add(post);
+    post.position.set(w / 2 + 0.9, 0.5, mbz); g.add(post);
     const mb = box(0.24, 0.24, 0.42, P([0x455a6b, 0x6b4a45, 0x3f4a3f, 0xa8a29a]));
-    mb.position.set(w / 2 + 0.9, 1.08, front + runOut - 0.5);
+    mb.position.set(w / 2 + 0.9, 1.08, mbz);
     mb.castShadow = true; g.add(mb);
   }
 
@@ -342,124 +351,163 @@ export class View {
   }
 
   /**
-   * The truck. FRESH CUT's makeCar('icecream') silhouette — a 4.6 m cream box with a
-   * pink panel, a cyan stripe and a cone on the roof — rebuilt facing +Z, with the two
-   * things a background prop never needed: a cab you sit in and a window that opens.
+   * THE TRUCK — a step van you stand inside, not a box with a cone on it.
+   *
+   * Real trucks: heavy gear over the axles, freezers at reach height because you are
+   * reaching into them all day, storage / prep / serving separated, and a service window
+   * built for fast handoff. Operators call it "the cramped, freezing reality" — cramped
+   * is the feature, but it has to be a SPACE.
+   *
+   * ⚠️ Everything inside is placed at the STATION coordinates from data.js, so the thing
+   * you walk up to and the thing you see are the same thing by construction. Move a
+   * station in data and the furniture moves with it.
    */
   _truck() {
+    const g = this._truckShell();
+    this._truckInterior(g);
+    return g;
+  }
+
+  _truckShell() {
     const T = D.TRUCK;
     const g = new THREE.Group();
     const cream = 0xf6f2e4;
 
-    const body = box(T.wide, 2.05, T.len, cream);
-    body.position.y = 1.28; body.castShadow = true; g.add(body);
-    // a rounded nose cap so it isn't a shoebox
-    const nose = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, T.wide, 10, 1, false, 0, Math.PI),
+    // ---- the box: tall, flat-sided, sitting high on a chassis. A step van. ----
+    const FLOOR = 0.62, ROOF = 2.98;                 // interior floor and ceiling heights
+    const body = box(T.wide, ROOF - FLOOR, T.len, cream);
+    body.position.y = (ROOF + FLOOR) / 2; body.castShadow = true; g.add(body);
+
+    // the chassis and skirt under it, so it isn't a box floating on four discs
+    const skirt = box(T.wide - 0.06, 0.34, T.len - 0.5, 0xcfc7b4);
+    skirt.position.y = FLOOR - 0.15; g.add(skirt);
+    const chassis = box(T.wide - 0.5, 0.18, T.len - 0.9, 0x4a4640);
+    chassis.position.y = FLOOR - 0.38; g.add(chassis);
+
+    // The raked snout, sticking out IN FRONT of the box — a short step-van nose.
+    // ⚠️ It must sit forward of the cab bulkhead (z = len/2 - 0.05). Tucked inside it, the
+    // driver looks straight at the back of their own bonnet: a big cream slab across the
+    // bottom-right of the windscreen that reads as a rendering fault.
+    const nose = box(T.wide - 0.10, 0.88, 0.55, cream);
+    nose.position.set(0, FLOOR + 0.40, T.len / 2 + 0.24);
+    nose.castShadow = true; g.add(nose);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, T.wide - 0.10, 12, 1, false, 0, Math.PI),
       lam({ color: cream }));
-    nose.rotation.z = Math.PI / 2; nose.rotation.y = Math.PI / 2;
-    nose.position.set(0, 1.9, T.len / 2 - 0.5); nose.castShadow = true; g.add(nose);
+    cap.rotation.z = Math.PI / 2; cap.rotation.y = Math.PI / 2;
+    cap.position.set(0, FLOOR + 0.84, T.len / 2 + 0.24); cap.castShadow = true; g.add(cap);
 
-    // ⚠️ NO TINTED PANE ACROSS THE CAB. Kyle: "the windshield looks horrible" — a
-    // translucent slab in front of a first-person camera is a smear you look THROUGH all
-    // game, and no opacity value makes it good. You get A-pillars, a header and a roof
-    // edge instead: the frame reads as a windscreen, the hole reads as glass.
-    // ⚠️ A-pillars and header are sized by the angle they subtend from the driver's eye.
-    // At 1.09 m from the camera even an honest 11 cm pillar eats a tenth of the screen —
-    // thin them AND sit further back in the cab, or the frame is most of what you see.
-    const pillarC = 0xe6e0cf;
+    // bumper, lamps, grille — the face of the thing
+    const bump = box(T.wide + 0.08, 0.20, 0.24, 0x8f8a80);
+    bump.position.set(0, FLOOR - 0.12, T.len / 2 + 0.06); g.add(bump);
+    const grille = box(T.wide - 0.5, 0.26, 0.1, 0x5a564f);
+    grille.position.set(0, FLOOR + 0.30, T.len / 2 + 0.02); g.add(grille);
     for (const sx of [-1, 1]) {
-      const pil = box(0.075, 1.05, 0.10, pillarC);
-      pil.position.set(sx * (T.wide / 2 - 0.05), 1.86, T.len / 2 - 0.06); g.add(pil);
+      const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.1, 12),
+        lam({ color: 0xfff6d8, emissive: 0x3a3428 }));
+      lamp.rotation.x = Math.PI / 2;
+      lamp.position.set(sx * (T.wide / 2 - 0.3), FLOOR + 0.36, T.len / 2 + 0.04); g.add(lamp);
+      const ind = box(0.16, 0.1, 0.08, 0xe8903a);
+      ind.position.set(sx * (T.wide / 2 - 0.08), FLOOR + 0.30, T.len / 2 + 0.02); g.add(ind);
+      // wing mirrors on stalks
+      const stalk = box(0.02, 0.02, 0.26, 0x6f6862);
+      stalk.position.set(sx * (T.wide / 2 + 0.12), 2.05, T.len / 2 - 0.62); g.add(stalk);
+      const wm = box(0.05, 0.30, 0.16, 0x3a3a38);
+      wm.position.set(sx * (T.wide / 2 + 0.22), 2.05, T.len / 2 - 0.68); g.add(wm);
     }
-    const header = box(T.wide, 0.10, 0.12, pillarC);
-    header.position.set(0, 2.43, T.len / 2 - 0.06); g.add(header);
+    // a rear bumper and lights so the back isn't blank
+    const rbump = box(T.wide + 0.06, 0.18, 0.2, 0x8f8a80);
+    rbump.position.set(0, FLOOR - 0.12, -T.len / 2 - 0.04); g.add(rbump);
+    for (const sx of [-1, 1]) {
+      const tl = box(0.16, 0.26, 0.08, 0xb03a30);
+      tl.position.set(sx * (T.wide / 2 - 0.24), FLOOR + 0.45, -T.len / 2 - 0.02); g.add(tl);
+    }
 
-    // ⚠️ NO INTERIOR PANELS. Boxing the cab in with a floor, ceiling and side wall was
-    // tried and is much worse: at 0.5 m from the eye the door wall alone eats a third of
-    // the frame and the windscreen becomes a letterbox. The body box is front-face culled,
-    // so you see out through the sides — which nobody notices, because the pillars, the
-    // header and the dash already say "you are sitting in a truck". Most driving games
-    // don't model the door interior for exactly this reason.
+    // ---- THE CAB APERTURE ----
+    // ⚠️ NO TINTED PANE. A translucent slab in front of a first-person camera is a smear
+    // you look through all game, and no opacity value makes it good. The FRAME reads as a
+    // windscreen and the HOLE reads as glass. Sized by the angle it subtends from the
+    // driver's eye, not by what looks right in the model.
+    const pillarC = 0xe6e0cf, GY = 1.92, GTOP = 2.74;
+    const bulk = box(T.wide - 0.06, GY - FLOOR, 0.08, pillarC);
+    bulk.position.set(0, (GY + FLOOR) / 2, T.len / 2 - 0.05); g.add(bulk);
+    for (const sx of [-1, 1]) {
+      const pil = box(0.08, GTOP - GY, 0.10, pillarC);
+      pil.position.set(sx * (T.wide / 2 - 0.05), (GY + GTOP) / 2, T.len / 2 - 0.05); g.add(pil);
+    }
+    const header = box(T.wide, ROOF - GTOP, 0.12, pillarC);
+    header.position.set(0, (GTOP + ROOF) / 2, T.len / 2 - 0.05); g.add(header);
 
-    // the dash, so the cab reads as a place you are sitting rather than a floating camera.
-    // ⚠️ SIDES: local +X is the truck's LEFT (right = -localX), so the driver sits at +X.
-    const dash = box(T.wide * 0.94, 0.26, 0.42, 0x4a4038);
-    dash.position.set(0, 1.18, T.len / 2 - 0.30); g.add(dash);
-    const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.185, 0.028, 8, 20), lam({ color: 0x59504a }));
-    wheel.position.set(0.42, 1.44, T.len / 2 - 0.42); wheel.rotation.x = 1.2; g.add(wheel);
-    const clip = box(0.28, 0.02, 0.36, 0xe8dfc6);
-    clip.position.set(-0.46, 1.33, T.len / 2 - 0.36); clip.rotation.x = -0.16; g.add(clip);
+    // the painted flank + stripe + hand-painted name, on the LEFT side (local +X)
+    const panel = box(0.05, 0.80, 3.0, 0xef9ec0);
+    panel.position.set(T.wide / 2 + 0.02, 1.85, -0.5); g.add(panel);
+    const stripe = box(0.05, 0.20, 3.0, 0x63c3d8);
+    stripe.position.set(T.wide / 2 + 0.02, 1.30, -0.5); g.add(stripe);
+    const name = box(0.04, 0.42, 1.15, 0x8a3f34);   // CY'S, in somebody else's hand
+    name.position.set(T.wide / 2 + 0.05, 1.86, -0.5); g.add(name);
 
-    // the painted flank + stripe, on the LEFT side (local +X)
-    const panel = box(0.06, 0.72, 2.3, 0xef9ec0);
-    panel.position.set(T.wide / 2 + 0.02, 1.5, -0.35); g.add(panel);
-    const stripe = box(0.06, 0.18, 2.3, 0x63c3d8);
-    stripe.position.set(T.wide / 2 + 0.02, 1.02, -0.35); g.add(stripe);
+    // ---- THE SERVING WINDOW, on the kerb side (local -X) ----
+    // ⚠️ A FRAME WITH A HOLE, never a pane: the window camera sits inside it and looks
+    // out, so a solid box of any colour there renders the poster shot completely black.
+    const X = -(T.wide / 2 + 0.01), WY0 = 1.52, WY1 = 2.46, WZ0 = -1.05, WZ1 = 0.95;
+    const barY = (y, h) => { const m = box(0.07, h, WZ1 - WZ0, 0x3a3a38); m.position.set(X, y, (WZ0 + WZ1) / 2); g.add(m); };
+    const barZ = (z) => { const m = box(0.07, WY1 - WY0, 0.10, 0x3a3a38); m.position.set(X, (WY0 + WY1) / 2, z); g.add(m); };
+    barY(WY1 + 0.05, 0.10); barZ(WZ0 - 0.05); barZ(WZ1 + 0.05);
+    const sill = box(0.42, 0.10, WZ1 - WZ0 + 0.2, 0xe9e2cf);
+    sill.position.set(-(T.wide / 2 + 0.06), WY0 - 0.05, (WZ0 + WZ1) / 2); g.add(sill);
+    this.hatch = box(0.08, WY1 - WY0, WZ1 - WZ0, cream);
+    this.hatch.position.set(X - 0.05, (WY0 + WY1) / 2, (WZ0 + WZ1) / 2); g.add(this.hatch);
+    // ⚠️ The open/closed heights live ON THE MESH, derived from the opening it covers.
+    // They were hardcoded numbers in frame() and went stale the moment the window moved —
+    // "open" then still covered two thirds of the aperture, so the poster shot was a grey
+    // slab with a child's head peeking under it.
+    this.hatch.userData.shut = (WY0 + WY1) / 2;
+    this.hatch.userData.open = WY1 + (WY1 - WY0) / 2 + 0.04;
+    // the awning over it — the single most "ice cream truck" silhouette there is
+    const awn = box(0.55, 0.06, WZ1 - WZ0 + 0.5, 0xef9ec0);
+    awn.position.set(-(T.wide / 2 + 0.26), WY1 + 0.22, (WZ0 + WZ1) / 2);
+    awn.rotation.z = -0.22; awn.castShadow = true; g.add(awn);
+    for (let i = 0; i < 6; i++) {
+      const scallop = box(0.55, 0.10, 0.20, i % 2 ? 0xf6f2e4 : 0xef9ec0);
+      scallop.position.set(-(T.wide / 2 + 0.26), WY1 + 0.14, WZ0 - 0.2 + i * 0.48);
+      scallop.rotation.z = -0.22; g.add(scallop);
+    }
 
-    // ⚠️ THE SERVING WINDOW is a FRAME WITH A HOLE, not a pane — the window camera sits
-    // inside it and looks out. A solid box of any colour there renders a black screen.
-    const X = -(T.wide / 2 + 0.02);
-    const bar = (h, d, y, z) => { const m = box(0.08, h, d, 0x3a3a38); m.position.set(X, y, z); g.add(m); };
-    bar(0.10, 2.10, 2.12, -0.1);
-    bar(0.90, 0.10, 1.62, 0.90);
-    bar(0.90, 0.10, 1.62, -1.10);
-    const sill = box(0.40, 0.10, 2.10, 0xe9e2cf);
-    sill.position.set(-(T.wide / 2 + 0.10), 1.14, -0.1); g.add(sill);
-    this.hatch = box(0.09, 0.90, 1.94, cream);
-    this.hatch.position.set(X - 0.05, 1.62, -0.1); g.add(this.hatch);
-
-    // ---- THE CHURN BAY, in the back. Park, turn around, three steps. ----
-    // ⚠️ The camera position for this existed before any of this geometry did, so turning
-    // round showed you the empty street BEHIND the truck (the body box is front-face
-    // culled). A camera pointed at nothing is not a location.
-    // Only a back wall and a floor — no side panels, because those are what boxed the cab
-    // in and turned the windscreen into a letterbox.
-    const bayBack = box(T.wide - 0.10, 1.95, 0.06, 0xd8d2c2);
-    bayBack.position.set(0, 1.30, -T.len / 2 + 0.05); g.add(bayBack);
-    const bayFloor = box(T.wide - 0.10, 0.05, T.len - 0.3, 0x6b6258);
-    bayFloor.position.set(0, 0.30, -0.2); g.add(bayFloor);
-    const bayCeil = box(T.wide - 0.10, 0.05, 2.9, 0xe6e0d0);
-    bayCeil.position.set(0, 2.28, -0.85); g.add(bayCeil);
-
-    // ⚠️ SIDE WALLS ONLY IN THE REAR SECTION (z < +0.5). Without them you stand in the
-    // bay looking at somebody's front garden straight through your own bodywork, because
-    // the body box is front-face culled — and the whole location falls apart. But walls
-    // that run the FULL length are what boxed the cab in and turned the windscreen into
-    // a letterbox, so they stop well behind the driver's seat.
-    const wallL = box(0.05, 1.95, 2.9, 0xd8d2c2);
-    wallL.position.set(T.wide / 2 - 0.05, 1.30, -0.85); g.add(wallL);
-    // the window side is walled only BEHIND the serving hatch, so the opening stays open
-    const wallR = box(0.05, 1.95, 1.15, 0xd8d2c2);
-    wallR.position.set(-(T.wide / 2 - 0.05), 1.30, -1.72); g.add(wallR);
-
-    // the counter, down the window side so you can hand things straight across
-    const counter = box(0.52, 0.08, 2.4, 0xb9bec2);
-    counter.position.set(-(T.wide / 2 - 0.32), 0.95, -0.7); g.add(counter);
-    const cFront = box(0.06, 0.62, 2.4, 0xe4ded0);
-    cFront.position.set(-(T.wide / 2 - 0.58), 0.63, -0.7); g.add(cFront);
-
-    // THE MACHINE — a churn barrel with a hopper, a spout and a lever you pull
-    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 0.86, 16),
-      lam({ color: 0xc9ced2 }));
-    barrel.position.set(-0.30, 1.42, -1.62); g.add(barrel);
-    const hopper = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.16, 0.34, 16),
-      lam({ color: 0xdfe4e7 }));
-    hopper.position.set(-0.30, 2.00, -1.62); g.add(hopper);
-    const spout = box(0.12, 0.20, 0.12, 0x9aa0a4);
-    spout.position.set(-0.30, 0.94, -1.36); g.add(spout);
-    this.churnLever = box(0.05, 0.30, 0.05, 0x8a3f34);
-    this.churnLever.position.set(-0.05, 1.30, -1.38); g.add(this.churnLever);
-    const motor = box(0.34, 0.26, 0.30, 0x7a8084);
-    motor.position.set(-0.30, 2.28, -1.62); g.add(motor);
-
-    // topping tubs on a shelf, in the mix-in colours
-    const shelf = box(0.30, 0.05, 1.5, 0xb5aa96);
-    shelf.position.set(T.wide / 2 - 0.22, 1.32, -1.25); g.add(shelf);
-    const tubCols = [0x6b4632, 0xd8a05a, 0xe86b86, 0xf0e07a, 0x8fd8c0, 0xf4f0e2];
-    tubCols.forEach((c, i) => {
-      const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.078, 0.13, 10), lam({ color: c }));
-      tub.position.set(T.wide / 2 - 0.22, 1.40, -1.88 + i * 0.25); g.add(tub);
-    });
+    // ---- THE SHELL YOU STAND INSIDE ----
+    // ⚠️ Full-length walls are fine NOW and were not before: the old truck was 1.95 m wide
+    // with the camera jammed 1.15 m forward, so a side wall 0.5 m from the eye ate a third
+    // of the frame and the windscreen became a letterbox. At 2.15 m wide with the seat set
+    // back it reads as sitting in a van, which is what it is.
+    const inC = 0xdcd6c6;
+    const floorM = box(T.wide - 0.10, 0.06, T.len - 0.2, 0x6b6258);
+    floorM.position.set(0, FLOOR, 0); g.add(floorM);
+    const ceilM = box(T.wide - 0.10, 0.06, T.len - 0.2, 0xe6e0d0);
+    ceilM.position.set(0, ROOF - 0.06, 0); g.add(ceilM);
+    const backM = box(T.wide - 0.12, ROOF - FLOOR, 0.06, inC);
+    backM.position.set(0, (ROOF + FLOOR) / 2, -T.len / 2 + 0.06); g.add(backM);
+    // ⚠️ THE DRIVER'S SIDE WINDOW. The seat sits 0.56 m from this wall, so a solid slab
+    // there fills the whole left of the windscreen view and the cab feels like a coffin.
+    // Real vans have a door window exactly here; leaving the aperture open is what makes
+    // the driving view breathe.
+    const DW0 = 1.60, DW1 = T.len / 2 - 0.1, DWY0 = 1.95, DWY1 = 2.62;
+    for (const seg of [[-T.len / 2 + 0.1, DW0], [DW1, T.len / 2 - 0.1]]) {
+      if (seg[1] - seg[0] < 0.05) continue;
+      const w = box(0.05, ROOF - FLOOR, seg[1] - seg[0], inC);
+      w.position.set(T.wide / 2 - 0.05, (ROOF + FLOOR) / 2, (seg[0] + seg[1]) / 2); g.add(w);
+    }
+    const dwBelow = box(0.05, DWY0 - FLOOR, DW1 - DW0, inC);
+    dwBelow.position.set(T.wide / 2 - 0.05, (DWY0 + FLOOR) / 2, (DW0 + DW1) / 2); g.add(dwBelow);
+    const dwAbove = box(0.05, ROOF - DWY1, DW1 - DW0, inC);
+    dwAbove.position.set(T.wide / 2 - 0.05, (ROOF + DWY1) / 2, (DW0 + DW1) / 2); g.add(dwAbove);
+    // the kerb side is walled either side of the serving opening
+    for (const seg of [[-T.len / 2 + 0.1, WZ0 - 0.05], [WZ1 + 0.05, T.len / 2 - 0.5]]) {
+      const w = box(0.05, ROOF - FLOOR, seg[1] - seg[0], inC);
+      w.position.set(-(T.wide / 2 - 0.05), (ROOF + FLOOR) / 2, (seg[0] + seg[1]) / 2); g.add(w);
+    }
+    // and the panels above and below the opening
+    const belowW = box(0.05, WY0 - FLOOR, WZ1 - WZ0, inC);
+    belowW.position.set(-(T.wide / 2 - 0.05), (WY0 + FLOOR) / 2, (WZ0 + WZ1) / 2); g.add(belowW);
+    const aboveW = box(0.05, ROOF - WY1, WZ1 - WZ0, inC);
+    aboveW.position.set(-(T.wide / 2 - 0.05), (ROOF + WY1) / 2, (WZ0 + WZ1) / 2); g.add(aboveW);
 
     // the freezer chest you actually sell out of, lids and all
     const chest = box(0.62, 0.62, 1.7, 0xdfe4e7);
@@ -470,36 +518,136 @@ export class View {
     }
 
     // the cone on the roof, which is the whole reason anyone looks up
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.8, 12), lam({ color: 0xf6d9a0 }));
-    cone.position.set(0, 2.72, -0.6); cone.rotation.x = Math.PI; cone.castShadow = true; g.add(cone);
-    const scoop = new THREE.Mesh(new THREE.SphereGeometry(0.3, 12, 9), lam({ color: 0xf2a0b4 }));
-    scoop.position.set(0, 3.1, -0.6); scoop.castShadow = true; g.add(scoop);
-
-    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.42, 8), lam({ color: 0x9a938a }));
-    horn.position.set(0, 2.5, 1.1); horn.rotation.x = -Math.PI / 2; g.add(horn);
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.0, 14), lam({ color: 0xf6d9a0 }));
+    cone.position.set(0, ROOF + 0.5, -0.4); cone.rotation.x = Math.PI; cone.castShadow = true; g.add(cone);
+    for (let i = 0; i < 3; i++) {     // a swirl, so it reads as soft serve and not a hat
+      const sw = new THREE.Mesh(new THREE.SphereGeometry(0.30 - i * 0.06, 12, 9), lam({ color: 0xf6e2ea }));
+      sw.position.set(0, ROOF + 1.02 + i * 0.20, -0.4); sw.castShadow = true; g.add(sw);
+    }
+    const horn = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.46, 10), lam({ color: 0x9a938a }));
+    horn.position.set(0, ROOF + 0.16, T.len / 2 - 0.9); horn.rotation.x = -Math.PI / 2; g.add(horn);
 
     this.wheels = [];
     for (const z of [T.axleFront, T.axleRear]) for (const x of [-1, 1]) {
-      const w = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.26, 14), lam({ color: 0x1b1b1e }));
+      const w = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.30, 16), lam({ color: 0x1b1b1e }));
       w.rotation.z = Math.PI / 2;
-      // ⚠️ OUTBOARD of the bay floor (which spans +/-0.925), or the tyres poke up through
-      // the floor and you are standing in the back of the truck next to a wheel.
-      w.position.set(x * (T.wide / 2 + 0.03), 0.42, z);
+      // ⚠️ OUTBOARD of the interior floor, or the tyres poke up through it and you are
+      // standing in the back of your own truck next to a wheel.
+      w.position.set(x * (T.wide / 2 + 0.02), 0.46, z);
       w.castShadow = true; g.add(w); this.wheels.push(w);
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.32, 12), lam({ color: 0xb9b3aa }));
+      hub.rotation.z = Math.PI / 2; hub.position.copy(w.position); g.add(hub);
+      // a wheel arch cut into the skirt
+      const arch = box(0.10, 0.5, 1.2, cream);
+      arch.position.set(x * (T.wide / 2 - 0.01), FLOOR - 0.10, z); g.add(arch);
     }
 
     // ⚠️ THE MIRROR — sized by the angle it subtends from the driver's eye, not by what
     // looks right in the model. At r 0.3, 1.5 m out, it fills a fifth of the screen.
     const arm = box(0.045, 0.045, 0.5, 0x8e8880);
-    arm.position.set(0, 2.06, T.len / 2 + 0.34); g.add(arm);
+    arm.position.set(0, 2.36, T.len / 2 + 0.34); g.add(arm);
     const rim = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.028, 8, 18), lam({ color: 0x6f6862 }));
-    rim.position.set(0, 2.10, T.len / 2 + 0.62); rim.rotation.x = -0.5; g.add(rim);
+    rim.position.set(0, 2.40, T.len / 2 + 0.62); rim.rotation.x = -0.5; g.add(rim);
     this.mirror = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2),
       lam({ color: 0xdfe9ee, emissive: 0x33454f }));
-    this.mirror.position.set(0, 2.10, T.len / 2 + 0.62);
+    this.mirror.position.set(0, 2.40, T.len / 2 + 0.62);
     this.mirror.rotation.x = Math.PI * 0.66; g.add(this.mirror);
 
+    g.userData.FLOOR = FLOOR; g.userData.ROOF = ROOF;
     return g;
+  }
+
+  /**
+   * THE FURNITURE — built AT the station coordinates from data.js, so the thing you walk
+   * up to and the thing you see are the same thing by construction. Move a station in
+   * data and its furniture moves with it; there is no second list to keep in sync.
+   */
+  _truckInterior(g) {
+    const T = D.TRUCK, FLOOR = g.userData.FLOOR;
+    const at = (id) => D.STATION_BY_ID[id];
+    const inward = (x) => x > 0 ? -1 : 1;          // which way a wall unit faces
+
+    // the chest freezer: one long unit down the left wall with three lids you reach into
+    const bins = ['bin_eyes', 'bin_bomb', 'bin_pop'].map(at);
+    const z0 = Math.min(...bins.map(b => b.z)) - 0.32, z1 = Math.max(...bins.map(b => b.z)) + 0.32;
+    const chest = box(0.52, 0.92, z1 - z0, 0xdfe4e7);
+    chest.position.set(T.wide / 2 - 0.30, FLOOR + 0.46, (z0 + z1) / 2); g.add(chest);
+    this.lids = {};
+    for (const b of bins) {
+      const lid = box(0.50, 0.05, 0.56, 0xb0c4cc);
+      lid.position.set(T.wide / 2 - 0.30, FLOOR + 0.94, b.z); g.add(lid);
+      this.lids[b.id] = lid;
+      const tag = box(0.02, 0.10, 0.30, 0xe8b04b);
+      tag.position.set(T.wide / 2 - 0.57, FLOOR + 0.78, b.z); g.add(tag);
+    }
+
+    // the scoop tub and the tub of whatever you invented, further back down the same wall
+    for (const [id, col] of [['tub_scoop', 0xf2e6cf], ['tub_new', 0xd8a8e0]]) {
+      const s = at(id);
+      const unit = box(0.46, 0.86, 0.62, 0xdfe4e7);
+      unit.position.set(T.wide / 2 - 0.28, FLOOR + 0.43, s.z); g.add(unit);
+      const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.20, 0.18, 0.16, 14), lam({ color: col }));
+      tub.position.set(T.wide / 2 - 0.28, FLOOR + 0.90, s.z); g.add(tub);
+    }
+
+    // THE SOFT-SERVE MACHINE — back on the kerb side, the longest walk from the bars
+    const sp = at('spigot');
+    const smBody = box(0.42, 1.35, 0.70, 0xc9ced2);
+    smBody.position.set(-(T.wide / 2 - 0.26), FLOOR + 0.68, sp.z); g.add(smBody);
+    const smHop = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.16, 0.34, 14), lam({ color: 0xdfe4e7 }));
+    smHop.position.set(-(T.wide / 2 - 0.26), FLOOR + 1.50, sp.z); g.add(smHop);
+    this.spigotLever = box(0.06, 0.28, 0.05, 0x8a3f34);
+    this.spigotLever.position.set(-(T.wide / 2 - 0.52), FLOOR + 1.10, sp.z); g.add(this.spigotLever);
+    const nozzle = box(0.10, 0.14, 0.10, 0x9aa0a4);
+    nozzle.position.set(-(T.wide / 2 - 0.50), FLOOR + 0.92, sp.z); g.add(nozzle);
+
+    // the counter under the serving window, with the register on it
+    const win = at('window');
+    const counter = box(0.44, 0.08, 2.1, 0xb9bec2);
+    counter.position.set(-(T.wide / 2 - 0.27), FLOOR + 0.86, win.z); g.add(counter);
+    const cFront = box(0.06, 0.80, 2.1, 0xe4ded0);
+    cFront.position.set(-(T.wide / 2 - 0.50), FLOOR + 0.44, win.z); g.add(cFront);
+    const till = box(0.30, 0.20, 0.42, 0x5a564f);
+    till.position.set(-(T.wide / 2 - 0.28), FLOOR + 1.00, win.z + 0.72); g.add(till);
+
+    // THE CHURN MACHINE, right at the back
+    const ch = at('churn');
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.86, 16), lam({ color: 0xc9ced2 }));
+    barrel.position.set(ch.x, FLOOR + 0.92, ch.z + 0.18); g.add(barrel);
+    const hopper = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.15, 0.32, 16), lam({ color: 0xdfe4e7 }));
+    hopper.position.set(ch.x, FLOOR + 1.50, ch.z + 0.18); g.add(hopper);
+    this.churnLever = box(0.05, 0.30, 0.05, 0x8a3f34);
+    this.churnLever.position.set(ch.x + 0.30, FLOOR + 0.85, ch.z + 0.18); g.add(this.churnLever);
+    // topping tubs on a shelf above it, in the mix-in colours
+    const shelf = box(0.28, 0.05, 1.3, 0xb5aa96);
+    shelf.position.set(T.wide / 2 - 0.20, FLOOR + 1.42, ch.z + 0.75); g.add(shelf);
+    [0x6b4632, 0xd8a05a, 0xe86b86, 0xf0e07a, 0x8fd8c0].forEach((c, i) => {
+      const tub = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.072, 0.13, 10), lam({ color: c }));
+      tub.position.set(T.wide / 2 - 0.20, FLOOR + 1.50, ch.z + 0.25 + i * 0.25); g.add(tub);
+    });
+
+    // THE SEAT, the wheel and the dash — the seat is a station like any other
+    const seat = at('seat');
+    const cush = box(0.46, 0.12, 0.46, 0x5a4a42);
+    cush.position.set(seat.x, FLOOR + 0.48, seat.z); g.add(cush);
+    const backr = box(0.46, 0.60, 0.12, 0x5a4a42);
+    backr.position.set(seat.x, FLOOR + 0.82, seat.z - 0.24); g.add(backr);
+    const dash = box(T.wide - 0.10, 0.24, 0.40, 0x4a4038);
+    dash.position.set(0, 1.78, T.len / 2 - 0.32); g.add(dash);
+    const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.20, 0.03, 8, 20), lam({ color: 0x59504a }));
+    wheel.position.set(seat.x, 1.98, T.len / 2 - 0.52); wheel.rotation.x = 1.2; g.add(wheel);
+    const clipS = at('clipboard');
+    const clip = box(0.28, 0.02, 0.36, 0xe8dfc6);
+    clip.position.set(clipS.x, 1.92, T.len / 2 - 0.36); clip.rotation.x = -0.16; g.add(clip);
+
+    // ⚠️ THE INTERIOR NEEDS ITS OWN LIGHT. The hemisphere light gives downward-facing
+    // faces the GROUND colour, so the ceiling of an enclosed box renders near-black and
+    // the whole bay looks like a cave. One cheap point light is the difference between
+    // "inside a truck" and "inside a cave".
+    const bulb = new THREE.PointLight(0xfff0d4, 0.85, 7.5, 1.4);
+    bulb.position.set(0, D.TRUCK.high - 0.35, -0.6); g.add(bulb);
+    const bulb2 = new THREE.PointLight(0xfff0d4, 0.45, 5.0, 1.4);
+    bulb2.position.set(0, D.TRUCK.high - 0.35, 1.6); g.add(bulb2);
   }
 
   // -------------------------------------------------------------------------
@@ -580,7 +728,8 @@ export class View {
     this.sun.target.position.set(tr.x, 0, tr.z);
     this.sun.target.updateMatrixWorld();
 
-    const want = sim.windowOpen ? 2.56 : 1.62;
+    const hu = this.hatch.userData;
+    const want = sim.windowOpen ? hu.open : hu.shut;
     this.hatch.position.y += (want - this.hatch.position.y) * Math.min(1, dt * 6);
 
     // the machine is visibly going while it churns — the lever swings

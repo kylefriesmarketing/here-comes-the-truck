@@ -145,6 +145,28 @@ export function buildHouses() {
   return out;
 }
 
+/**
+ * THE FRONT-GARDEN BAND — where yard props may stand, in HOUSE-LOCAL z (origin = the
+ * house centre, +z toward the street).
+ *
+ * ⚠️ This lives here, in the map module, and is asserted by the battery, because getting
+ * it wrong put TREES IN THE ROAD. The original placed props at `front + <some metres>`
+ * where `front` is the centre-to-face offset, while separately computing a run-out that
+ * was ALSO measured from the centre — double-counting 2.3 m and standing trees 0.2 m from
+ * the street centreline, hedges on the pavement and every mailbox in the middle of the
+ * road. Placement is geometry, so it belongs with the geometry.
+ */
+export function yardBand(houseDepth = XS.houseDepth) {
+  const centre = XS.houseFront + XS.houseDepth / 2;   // 8.7 m out from the street centreline
+  return {
+    centre,
+    face: houseDepth / 2,                              // the house's own front wall
+    near: houseDepth / 2 + 0.35,                       // just off the doorstep
+    far: centre - XS.walkOut - 0.35,                   // stop short of the pavement
+    kerb: centre - XS.kerb,                            // where the path and drive end
+  };
+}
+
 /** Solid rects for collision. Houses are hard; kerbs and lawns are drag, not walls. */
 export function buildRects(houses) {
   return houses.map(h => {
