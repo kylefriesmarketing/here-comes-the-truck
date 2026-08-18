@@ -391,6 +391,19 @@ if (c.hash === a.hash) bad(`seeds 999 and 1000 produced identical runs — the s
   console.log(`the yard:        props sit ${(bb.centre - bb.far).toFixed(1)}-${(bb.centre - bb.near).toFixed(1)} m from the centreline (road ends at ${HP.XS.roadHalf}, pavement at ${HP.XS.walkOut})`);
 }
 {
+  // THE WEATHER: deterministic per (seed, day), all four kinds reachable, and a pinned
+  // day must restore to the same weather after a save round-trip.
+  const kinds = {};
+  for (let s = 1; s <= 40; s++) { const g = new Game({ seed: s, day: (s % 9) + 1 }); kinds[g.weather.key] = (kinds[g.weather.key] || 0) + 1; }
+  console.log(`the weather:     40 rolled days -> ${JSON.stringify(kinds)}`);
+  if (Object.keys(kinds).length < 4) bad(`only ${Object.keys(kinds).length}/4 weather kinds ever roll`);
+  const a = new Game({ seed: 9, day: 3 }), b = new Game({ seed: 9, day: 3 });
+  if (a.weather.key !== b.weather.key) bad('weather is not deterministic for the same seed+day');
+  const g2 = new Game({ seed: 9, day: 3, weather: 'scorcher' });
+  const g3 = new Game({ seed: 9, day: 3 }).restore(JSON.parse(JSON.stringify(g2.snapshot())));
+  if (g3.weather.key !== 'scorcher') bad('pinned weather does not survive a save round-trip');
+}
+{
   // per-item melt: a tough bar must outlast a soft one as the box warms
   const tough = D.softBelow(0.85), weak = D.softBelow(0.30);
   console.log(`melt:            a 0.85-melt item softens at cold ${tough.toFixed(3)}, a 0.30-melt at ${weak.toFixed(3)}`);

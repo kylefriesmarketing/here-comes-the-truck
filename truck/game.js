@@ -27,6 +27,17 @@ export class Game {
     this.day = opts.day || 1;
     this.t = 0;
     this.hour = D.DAY.startHour;
+
+    // THE DAY'S WEATHER — salted hash of (seed, day), NOT this.rng: the radio reads it at
+    // boot, before the sim has drawn anything, and it must not advance the stream.
+    // `opts.weather` pins it for trial cells.
+    if (opts.weather) this.weather = D.WEATHER.find(w => w.key === opts.weather) || D.WEATHER[1];
+    else {
+      const r = this._h(this.seed, this.day, 'wx');
+      let acc = 0, pickIx = 1;
+      for (let i = 0; i < D.WEATHER.length; i++) { acc += D.WEATHER_ODDS[i]; if (r < acc) { pickIx = i; break; } }
+      this.weather = D.WEATHER[pickIx];
+    }
     this.over = false;
     this.ending = null;
     this.frame = 0;
@@ -359,7 +370,9 @@ export class Game {
       if (h.cool > 0) h.cool -= dt;
       let g = 0;
       if (this.song) g = D.hearAt(Math.hypot(h.x - tr.x, h.z - tr.z), this.songRadius());
-      if (g > 0) h.heard += D.JINGLE.heardRate * g * dt;
+      // the weather decides how readily the street answers the song (§6: a scorcher
+      // keeps everyone indoors — outMul 0.62 — while a hot day is the best pull)
+      if (g > 0) h.heard += D.JINGLE.heardRate * this.weather.outMul * g * dt;
       else if (h.heard > 0) h.heard = Math.max(0, h.heard - D.JINGLE.heardDecay * dt);
 
       const need = D.REGULAR_BY_HOUSE[h.id] ? D.JINGLE.heardOut * D.REGULAR.heardMul : D.JINGLE.heardOut;
@@ -548,7 +561,8 @@ export class Game {
     this.cold -= D.coldDrain({
       windowOpen: this.windowOpen,
       moving: Math.abs(this.truck.v) > 0.5,
-      heat, coldMul: this.mod.coldMul,
+      heat: heat * this.weather.heatMul,     // the scorcher eats the box (§6)
+      coldMul: this.mod.coldMul,
     }) * dt;
 
     if (this.cold <= 0) { this.cold = 0; this._endDay('cold'); }
@@ -955,7 +969,7 @@ export class Game {
 
   summary() {
     return {
-      day: this.day, why: this.ending,
+      day: this.day, why: this.ending, weather: this.weather.key,
       took: this.drawer, cash: this.cash, rep: Math.round(this.rep * 10) / 10,
       coldLeft: Math.round(this.cold * 1000) / 1000,
       served: this.stats.served, cameOut: this.stats.cameOut,
@@ -976,6 +990,7 @@ export class Game {
   snapshot() {
     return {
       v: D.VERSION, seed: this.seed, rs: this._rs, day: this.day, t: this.t,
+      weather: this.weather.key,
       truck: { ...this.truck }, crew: { ...this.crew },
       cold: this.cold, cash: this.cash, drawer: this.drawer,
       rep: this.rep, noiseHeat: this.noiseHeat, tickets: this.tickets,
@@ -999,6 +1014,7 @@ export class Game {
 
   restore(s) {
     this._rs = s.rs >>> 0; this.day = s.day; this.t = s.t;
+    if (s.weather) this.weather = D.WEATHER.find(w => w.key === s.weather) || this.weather;
     this.truck = { ...s.truck };
     if (s.crew) this.crew = { ...s.crew };
     this.cold = s.cold; this.cash = s.cash;

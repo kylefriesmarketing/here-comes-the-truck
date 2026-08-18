@@ -74,6 +74,28 @@ export const DAY = {
   secondsPerHour: 90,       // 1 sim-hour = 90 real seconds -> a full day is ~9.75 min
 };
 
+// ---------------------------------------------------------------------------
+// THE WEATHER (bible §6). ⚠️ NOT "hotter is better": real operators report sales DECLINE
+// above 100°F because people stop going outside. `outMul` scales how readily the song
+// pulls people out; `heatMul` scales what the day does to your cold. So the WARM day is
+// the good day, the SCORCHER is faster melt AND fewer customers — the day you'd stay
+// home, which is the §13 winter logic in miniature. Rolled per day from a salted hash
+// (never this.rng — the UI reads it before the sim starts drawing).
+// The radio is how you find out. That is the radio's whole job (§4).
+// ---------------------------------------------------------------------------
+export const WEATHER = [
+  { key: 'mild', label: 'mild', heatMul: 0.55, outMul: 0.80,
+    radio: "whzl says: cloud coming over. sixty-eight and staying there. bring a book." },
+  { key: 'warm', label: 'warm', heatMul: 1.0, outMul: 1.0,
+    radio: "whzl says: eighty-four and sunny. that's the one. go to work." },
+  { key: 'hot', label: 'hot', heatMul: 1.35, outMul: 1.12,
+    radio: "whzl says: ninety-two by three o'clock. they'll be out. so will the sun." },
+  { key: 'scorcher', label: 'a scorcher', heatMul: 1.9, outMul: 0.62,
+    radio: "whzl says: hundred and one. nobody's leaving the house. don't take it personal." },
+];
+// weights: most days are warm/hot; the ends are rarer
+export const WEATHER_ODDS = [0.22, 0.36, 0.28, 0.14];
+
 // The day is 6.5 sim-hours x 90 s = 585 real seconds. These rates are budgeted against
 // that number so a WELL-RUN day just barely spends the whole box, and a day with the
 // window hanging open burns out around two thirds through. If you change DAY, re-budget:

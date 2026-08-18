@@ -29,8 +29,11 @@ const PINNED = { alwaysRight: true, greed: 0, patience: 0.5, songLove: 0.9, song
 const problems = [];
 const t0 = Date.now();
 
-function cell(label, policy, prices, owned) {
-  const runs = SEEDS.map(s => soakRun(s, { policy: { ...PINNED, ...policy }, prices, owned }));
+// ⚠️ `weather: 'warm'` pins the NEW per-day weather roll. The moment weather entered the
+// sim, every existing cell silently inherited a fresh confounder — two price cells could
+// differ by a scorcher, not by price. Pin everything that is not the independent variable.
+function cell(label, policy, prices, owned, weather = 'warm') {
+  const runs = SEEDS.map(s => soakRun(s, { policy: { ...PINNED, ...policy }, prices, owned, weather }));
   const errs = runs.reduce((a, r) => a + r.errors.length, 0);
   if (errs) problems.push(`cell "${label}" produced ${errs} sim errors`);
   const m = (f) => runs.reduce((a, r) => a + f(r), 0) / runs.length;
@@ -188,6 +191,30 @@ if (legend.gross < dull.gross * 0.95) {
 }
 console.log(`  the bay pays back ${(((Math.max(good.gross, legend.gross) - noChurn.gross) / noChurn.gross) * 100).toFixed(0)}% ` +
   `on its best flavour, and costs ${(noChurn.hour - Math.min(good.hour, legend.hour)).toFixed(1)} h of afternoon.`);
+
+// =========================================================================
+// TRIAL E — THE WEATHER. §6's claim, tested: the WARM/HOT band is the money and the
+// scorcher is a bad day (fewer people out AND a faster-dying box). If the scorcher is
+// ever the best day, the "stay home and clean the machine" decision can never exist.
+// =========================================================================
+console.log(`\nTRIAL E — the weather   (n=${N} days per cell)`);
+console.log(`  ${pad('the day', 14)}${rt('gross', 9)}${rt('sold', 7)}${rt('came out', 10)}${rt('ends at', 9)}`);
+const E = D.WEATHER.map(w => cell(w.label, {}, null, null, w.key));
+for (const r of E) {
+  console.log(`  ${pad(r.label, 14)}${rt($(r.gross), 9)}${rt(r.served.toFixed(1), 7)}${rt(r.cameOut.toFixed(1), 10)}${rt(r.hour.toFixed(1) + 'h', 9)}`);
+}
+const [mildE, warmE, hotE, scorchE] = E;
+const bestGross = Math.max(warmE.gross, hotE.gross);
+if (scorchE.gross >= bestGross) {
+  problems.push(`the scorcher (${$(scorchE.gross)}) beats the warm band (${$(bestGross)}) — "hotter is better" is exactly what §6 forbids`);
+}
+if (scorchE.hour >= warmE.hour) {
+  problems.push('the scorcher does not shorten the day — heatMul is not reaching the box');
+}
+if (scorchE.cameOut >= warmE.cameOut) {
+  problems.push('as many people come out on a scorcher as a warm day — outMul is inert');
+}
+console.log(`  the scorcher takes ${((1 - scorchE.gross / bestGross) * 100).toFixed(0)}% less than the warm band and ends ${(warmE.hour - scorchE.hour).toFixed(1)} h earlier.`);
 
 // =========================================================================
 console.log('');

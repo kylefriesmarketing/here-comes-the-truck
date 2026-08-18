@@ -277,9 +277,10 @@ export class UI {
   // ⚠️ THE LOOP ENDS ON A PERSON, NOT A NUMBER. The tally is there, but the last thing
   // you read is somebody's reply.
   dayEnd(s, g) {
-    const why = s.why === 'cold' ? 'the box is empty and the last of it is soup'
+    const wx = D.WEATHER.find(w => w.key === s.weather);
+    const why = (s.why === 'cold' ? 'the box is empty and the last of it is soup'
       : s.why === 'dusk' ? 'the streetlights came on'
-        : 'you called it';
+        : 'you called it') + (wx ? ' · ' + wx.label + ' today' : '');
     // ⚠️ THE LOOP ENDS ON A PERSON, NOT A NUMBER. If you met a regular today, the last
     // thing you read is theirs — and the day you finally do the thing that matters to
     // them, it's the payoff line instead.

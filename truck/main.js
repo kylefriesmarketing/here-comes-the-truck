@@ -124,7 +124,11 @@ function newDay() {
   camNow.set = false; lookPitch = -0.05;
   ui.g = () => G;
   sfx.ambStart(); sfx.engineStart();
-  ui.hint('hold SPACE and drive. they come out when they hear you.', 7000);
+  // ⚠️ THE FORECAST IS THE FIRST THING YOU HEAR (bible §4: the radio is the weather
+  // surface). It matters because the weather now runs the day — a scorcher keeps the
+  // street indoors and eats the box, so this line is planning information, not colour.
+  ui.hint('📻 ' + G.weather.radio, 8500);
+  if (save.days === 0) setTimeout(() => ui.hint('hold SPACE and drive. they come out when they hear you.', 7000), 9000);
 }
 
 function endDay(s) {
@@ -166,6 +170,10 @@ addEventListener('keydown', (e) => {
     if (!r.ok && r.msg) ui.hint(r.msg);
   }
   if (e.code === 'KeyF') { G.act('drop'); }
+  if (e.code === 'KeyR') {
+    if (sfx.radioPlaying()) { sfx.radioOff(); ui.hint('radio off.'); }
+    else { sfx.radioOn(); ui.hint('📻 whzl, the porch. ' + G.weather.radio, 7000); }
+  }
   if (e.code === 'Tab') { e.preventDefault(); ui.clipboard(); }
   if (e.code === 'KeyM') { save.settings.muted = !save.settings.muted; sfx.muted(save.settings.muted); persist(); }
   if (e.code === 'Enter' && G.serving) {

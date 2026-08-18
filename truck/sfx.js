@@ -144,6 +144,62 @@ export const nope = () => blip(260, 0.16, 'square', 0.05, 'ui', 190);
 export const waveAt = () => { blip(880, 0.1, 'triangle', 0.05); setTimeout(() => blip(1180, 0.14, 'triangle', 0.045), 90); };
 
 // ---------------------------------------------------------------------------
+// THE RADIO — WHZL, The Porch. One station, because Mister Softee sells two flavours.
+// A lo-fi pad: three detuned triangles walking a I-vi-IV-V progression through a warm
+// lowpass, with vinyl hiss. Tracked in its own ledger and stopped on cycle — the Age of
+// Toys leak lesson. The FORECAST is text (main.js reads D.WEATHER and hints it); this is
+// only the music, because synthesized speech would break the deadpan.
+// ---------------------------------------------------------------------------
+let radio = { on: false, nodes: [], timers: [] };
+
+export function radioOn() {
+  if (!ac() || radio.on) return;
+  radio.on = true;
+  const g = AC.createGain(); g.gain.value = 0.0;
+  g.connect(buses.amb); radio.nodes.push(g);
+  g.gain.linearRampToValueAtTime(0.9, AC.currentTime + 0.8);
+
+  // vinyl hiss
+  const buf = AC.createBuffer(1, AC.sampleRate, AC.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * 0.4;
+  const hiss = AC.createBufferSource(); hiss.buffer = buf; hiss.loop = true;
+  const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 3200;
+  const hg = AC.createGain(); hg.gain.value = 0.006;
+  hiss.connect(hp); hp.connect(hg); hg.connect(g); hiss.start();
+  radio.nodes.push(hiss);
+
+  // the pad: chord tones, walked every few seconds
+  const CHORDS = [[220, 277, 330], [185, 220, 277], [147, 220, 262], [165, 208, 247]];
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+  const pg = AC.createGain(); pg.gain.value = 0.055;
+  lp.connect(pg); pg.connect(g);
+  const voices = CHORDS[0].map(() => {
+    const o = AC.createOscillator(); o.type = 'triangle';
+    const og = AC.createGain(); og.gain.value = 0.33;
+    o.connect(og); og.connect(lp); o.start();
+    radio.nodes.push(o);
+    return o;
+  });
+  let step = 0;
+  const walk = () => {
+    if (!radio.on) return;
+    const ch = CHORDS[step % CHORDS.length]; step++;
+    const t = AC.currentTime;
+    voices.forEach((o, i) => o.frequency.setTargetAtTime(ch[i] * (1 + (i - 1) * 0.0012), t, 0.35));
+    radio.timers.push(setTimeout(walk, 3800));
+  };
+  walk();
+}
+export function radioOff() {
+  radio.on = false;
+  for (const t of radio.timers) clearTimeout(t);
+  for (const n of radio.nodes) { try { n.stop ? n.stop() : 0; } catch (_) { } try { n.disconnect(); } catch (_) { } }
+  radio = { on: false, nodes: [], timers: [] };
+}
+export function radioPlaying() { return radio.on; }
+
+// ---------------------------------------------------------------------------
 // The street bed. Tracked, and stopped on teardown — the Age of Toys leak lesson.
 // ---------------------------------------------------------------------------
 export function ambStart() {
@@ -185,4 +241,4 @@ export function ambStop() {
   amb = { nodes: [], timers: [] };
 }
 export function ambDebug() { return { nodes: amb.nodes.length, timers: amb.timers.length, song: song.nodes.length }; }
-export function stopAll() { songOff(); engineStop(); ambStop(); }
+export function stopAll() { songOff(); engineStop(); ambStop(); radioOff(); }

@@ -340,6 +340,49 @@ export function menuBoard(rows) {
 }
 
 /**
+ * The upper-flank strip: a painted row of the actual menu — bars, pops, cones — the way
+ * every real truck wears decal stickers of what it sells above the waistline.
+ */
+export function menuStrip(len, h) {
+  const PX = 2048, PY = Math.max(64, Math.round(PX * h / len));
+  return make(`mstrip${len.toFixed(1)}x${h.toFixed(1)}`, [PX, PY], (g, S, H) => {
+    g.fillStyle = '#f7f3e6'; g.fillRect(0, 0, S, H);
+    const y0 = H * 0.14, hh = H * 0.72;
+    const items = 7;
+    for (let i = 0; i < items; i++) {
+      const cx = S * (0.5 + i) / items, w = hh * 0.42;
+      const kind = i % 4;
+      if (kind === 0) {            // striped bomb pop
+        const cols = ['#d8453a', '#f2f0ea', '#3f6fd4'];
+        cols.forEach((c, j) => { g.fillStyle = c; g.fillRect(cx - w / 2, y0 + hh * j / 3.6, w, hh / 3.6); });
+        g.fillStyle = '#d8c9a0'; g.fillRect(cx - w * 0.08, y0 + hh * 0.86, w * 0.16, hh * 0.14);
+      } else if (kind === 1) {     // cone with a swirl
+        g.fillStyle = '#e8c98a';
+        g.beginPath(); g.moveTo(cx - w / 2, y0 + hh * 0.45); g.lineTo(cx + w / 2, y0 + hh * 0.45);
+        g.lineTo(cx, y0 + hh); g.closePath(); g.fill();
+        g.fillStyle = '#f6ece0';
+        for (let s2 = 0; s2 < 3; s2++) {
+          g.beginPath(); g.arc(cx, y0 + hh * (0.34 - s2 * 0.115), w * (0.52 - s2 * 0.11), 0, 7); g.fill();
+        }
+      } else if (kind === 2) {     // chocolate bar with a bite
+        g.fillStyle = '#6b4632'; g.fillRect(cx - w / 2, y0 + hh * 0.08, w, hh * 0.72);
+        g.fillStyle = '#f7f3e6';
+        g.beginPath(); g.arc(cx + w / 2 - 2, y0 + hh * 0.16, w * 0.26, 0, 7); g.fill();
+        g.fillStyle = '#d8c9a0'; g.fillRect(cx - w * 0.08, y0 + hh * 0.80, w * 0.16, hh * 0.2);
+      } else {                     // pink round pop with gumball eyes
+        g.fillStyle = '#f2a0b4';
+        g.beginPath(); g.arc(cx, y0 + hh * 0.36, w * 0.55, 0, 7); g.fill();
+        for (const s2 of [-1, 1]) {
+          g.fillStyle = '#f2f0ea'; g.beginPath(); g.arc(cx + s2 * w * 0.2, y0 + hh * 0.3, w * 0.14, 0, 7); g.fill();
+          g.fillStyle = '#2f2a24'; g.beginPath(); g.arc(cx + s2 * w * 0.2, y0 + hh * 0.31, w * 0.06, 0, 7); g.fill();
+        }
+        g.fillStyle = '#d8c9a0'; g.fillRect(cx - w * 0.08, y0 + hh * 0.82, w * 0.16, hh * 0.18);
+      }
+    }
+  });
+}
+
+/**
  * The rear safety sign. ⚠️ Not decoration — bible §7: NY, NJ and Michigan law requires a
  * stop arm, flashing lamps and the front convex mirror on these trucks, and Detroit cut
  * ice-cream-truck injuries from 48 a year to 11 by mandating the kit in 1978. The mirror

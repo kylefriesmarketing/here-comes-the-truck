@@ -504,6 +504,11 @@ export class View {
       const belt = box(0.04, 0.10, T.len - 0.1, 0x63c3d8);
       belt.position.set(sx * (T.wide / 2 + 0.028), LIVY1 + 0.09, 0); g.add(belt);
     }
+    // the painted menu strip above the waistline — what the truck sells, worn on the
+    // truck, on the OFF side (the kerb side's upper flank is the window and awning)
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.62, T.len - 1.6),
+      lam({ map: TX.menuStrip(T.len - 1.6, 0.62), emissive: 0x2a2724 }));
+    strip.position.set(T.wide / 2 + 0.028, 2.12, -0.4); g.add(strip);
     const beltF = box(T.wide + 0.05, 0.10, 0.04, 0x63c3d8);
     beltF.position.set(0, LIVY1 + 0.09, -T.len / 2 - 0.02); g.add(beltF);
 

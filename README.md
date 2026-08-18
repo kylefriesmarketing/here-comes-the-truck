@@ -8,6 +8,19 @@
 
 ---
 
+## Status — M5, the weather and the radio · 2026-08-17
+
+**Per-day weather** (§6): mild / warm / hot / **scorcher**, rolled from a salted hash of
+(seed, day). `outMul` scales how readily the song pulls people out; `heatMul` scales what
+the day does to the box. Measured (Trial E, n=6): **the scorcher takes 35% less than the
+warm band** — "hotter is better" is structurally false, which is what makes a stay-home
+day thinkable. **The radio works** (R key): WHZL, The Porch — a tracked lo-fi synth pad —
+and the forecast is the first thing you hear each morning, because it is planning
+information now, not colour. The off flank wears a painted row of the actual menu.
+⚠️ Trials pin `weather:'warm'` — the moment weather entered the sim, every existing cell
+silently inherited a fresh confounder. Watch item: MILD edges warm at n=6 (slower drain =
+longer day); borderline vs the noise floor, not tuned.
+
 ## Status — M3/M4, the truck is a place · 2026-08-12→17
 
 **M3 — walkable interior (Kyle's call: "the truck should be a moveable space").** The crew
