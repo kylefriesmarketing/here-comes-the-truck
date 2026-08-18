@@ -339,6 +339,39 @@ export function menuBoard(rows) {
   return t;
 }
 
+/**
+ * The rear safety sign. ⚠️ Not decoration — bible §7: NY, NJ and Michigan law requires a
+ * stop arm, flashing lamps and the front convex mirror on these trucks, and Detroit cut
+ * ice-cream-truck injuries from 48 a year to 11 by mandating the kit in 1978. The mirror
+ * is already a mechanic; this is the rest of the same statute, worn on the back.
+ */
+export const slowSign = () => make('slowsign', [512, 320], (g, S, H) => {
+  g.fillStyle = '#e8a63a'; g.fillRect(0, 0, S, H);
+  g.strokeStyle = '#2f2a24'; g.lineWidth = 14; g.strokeRect(12, 12, S - 24, H - 24);
+  g.fillStyle = '#2f2a24'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = '700 96px Georgia, serif'; g.fillText('SLOW', S / 2, 92);
+  g.font = '700 62px Georgia, serif'; g.fillText('CHILDREN', S / 2, 176);
+  g.font = '700 52px Georgia, serif'; g.fillText('CROSSING', S / 2, 240);
+});
+
+/** The little price decal beside the serving window, so the queue can read it too. */
+export const windowDecal = () => make('windecal', [320, 512], (g, S, H) => {
+  g.fillStyle = '#f6efdd'; g.fillRect(0, 0, S, H);
+  g.strokeStyle = '#ef9ec0'; g.lineWidth = 10; g.strokeRect(8, 8, S - 16, H - 16);
+  g.fillStyle = '#8a3f34'; g.textAlign = 'center'; g.font = '700 46px Georgia, serif';
+  g.fillText('SERVED', S / 2, 66);
+  g.fillText('HERE', S / 2, 116);
+  // a painted cone
+  g.fillStyle = '#f6d9a0';
+  g.beginPath(); g.moveTo(S / 2 - 46, 210); g.lineTo(S / 2 + 46, 210); g.lineTo(S / 2, 330); g.closePath(); g.fill();
+  for (const [dx, dy, r, c] of [[-30, -22, 36, '#f6e2ea'], [30, -26, 34, '#f2a0b4'], [0, -60, 38, '#f6e2ea']]) {
+    g.fillStyle = c; g.beginPath(); g.arc(S / 2 + dx, 210 + dy, r, 0, 7); g.fill();
+  }
+  g.fillStyle = '#3d5866'; g.font = '400 30px Georgia, serif';
+  g.fillText('mind the step', S / 2, 400);
+  g.fillText('· thank you ·', S / 2, 444);
+});
+
 /** Brushed stainless, for the machines and the counter. */
 export const steel = () => make('steel', 256, (g, S) => {
   g.fillStyle = '#c6ccd0'; g.fillRect(0, 0, S, S);

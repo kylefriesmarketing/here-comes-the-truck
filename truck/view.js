@@ -432,13 +432,57 @@ export class View {
       const wm = box(0.05, 0.30, 0.16, 0x3a3a38);
       wm.position.set(sx * (T.wide / 2 + 0.22), 2.05, T.len / 2 - 0.68); g.add(wm);
     }
-    // a rear bumper and lights so the back isn't blank
+    // ---- the rear: doors, the safety sign, the stop arm, the flashers ----
     const rbump = box(T.wide + 0.06, 0.18, 0.2, 0x8f8a80);
     rbump.position.set(0, FLOOR - 0.12, -T.len / 2 - 0.04); g.add(rbump);
     for (const sx of [-1, 1]) {
       const tl = box(0.16, 0.26, 0.08, 0xb03a30);
       tl.position.set(sx * (T.wide / 2 - 0.24), FLOOR + 0.45, -T.len / 2 - 0.02); g.add(tl);
+      // rear door seams + handles, so the back reads as doors rather than a blank slab
+      const seam = box(0.02, ROOF - FLOOR - 0.5, 0.03, 0xcfc7b4);
+      seam.position.set(sx * 0.02, (ROOF + FLOOR) / 2 - 0.1, -T.len / 2 - 0.015); g.add(seam);
+      const handle = box(0.16, 0.05, 0.05, 0x8f8a80);
+      handle.position.set(sx * 0.28, 1.55, -T.len / 2 - 0.04); g.add(handle);
+      const hinge1 = box(0.06, 0.14, 0.04, 0x9a948a);
+      hinge1.position.set(sx * (T.wide / 2 - 0.10), 1.1, -T.len / 2 - 0.02); g.add(hinge1);
+      const hinge2 = box(0.06, 0.14, 0.04, 0x9a948a);
+      hinge2.position.set(sx * (T.wide / 2 - 0.10), 2.3, -T.len / 2 - 0.02); g.add(hinge2);
     }
+    // ⚠️ THE SLOW-CHILDREN SIGN — the same 1978 Detroit statute the mirror comes from,
+    // worn on the back where following traffic reads it. Not decoration: it is why the
+    // mirror mechanic makes sense the first time you see the truck from outside.
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 0.72),
+      new THREE.MeshBasicMaterial({ map: TX.slowSign() }));
+    sign.position.set(0, 2.15, -T.len / 2 - 0.04);
+    sign.rotation.y = Math.PI; g.add(sign);
+    // the flashers either side of it — lit amber, swapped on when the window is open
+    this.flashers = [];
+    for (const sx of [-1, 1]) {
+      const fl = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.08, 10),
+        lam({ color: 0xe8a63a, emissive: 0x000000 }));
+      fl.rotation.x = Math.PI / 2;
+      fl.position.set(sx * (T.wide / 2 - 0.28), 2.6, -T.len / 2 - 0.03);
+      g.add(fl); this.flashers.push(fl);
+    }
+    // THE STOP ARM — swings out from the rear kerb-side corner while you serve
+    this.stopArm = new THREE.Group();
+    this.stopArm.position.set(-(T.wide / 2 + 0.02), 1.7, -T.len / 2 + 0.3);
+    const armPole = box(0.04, 0.04, 0.55, 0x8f8a80);
+    armPole.position.z = 0.28; this.stopArm.add(armPole);
+    const oct = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.03, 8),
+      lam({ color: 0xb03a30 }));
+    oct.rotation.z = Math.PI / 2; oct.position.set(0, 0, 0.6); this.stopArm.add(oct);
+    const octW = new THREE.Mesh(new THREE.CylinderGeometry(0.145, 0.145, 0.035, 8),
+      lam({ color: 0xf2ece2 }));
+    octW.rotation.z = Math.PI / 2; octW.position.set(0.005, 0, 0.6); this.stopArm.add(octW);
+    this.stopArm.rotation.y = 0;                     // 0 = folded flat along the body
+    g.add(this.stopArm);
+
+    // the SERVED HERE decal beside the window, for the queue to read
+    const decal = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.68),
+      new THREE.MeshBasicMaterial({ map: TX.windowDecal() }));
+    decal.position.set(-(T.wide / 2 + 0.032), 1.95, 1.45);
+    decal.rotation.y = -Math.PI / 2; g.add(decal);
 
     // ---- THE CAB APERTURE ----
     // ⚠️ NO TINTED PANE. A translucent slab in front of a first-person camera is a smear
@@ -665,19 +709,69 @@ export class View {
       tub.position.set(T.wide / 2 - 0.20, FLOOR + 1.50, ch.z + 0.25 + i * 0.25); g.add(tub);
     });
 
-    // THE SEAT, the wheel and the dash — the seat is a station like any other
+    // ---- THE CAB, furnished. A seat is not a box and a dash is not a shelf. ----
     const seat = at('seat');
-    const cush = box(0.46, 0.12, 0.46, 0x5a4a42);
-    cush.position.set(seat.x, FLOOR + 0.48, seat.z); g.add(cush);
-    const backr = box(0.46, 0.60, 0.12, 0x5a4a42);
-    backr.position.set(seat.x, FLOOR + 0.82, seat.z - 0.24); g.add(backr);
+    // sprung bench seat: cushion, piped backrest, headrest, pedestal
+    const cush = box(0.48, 0.14, 0.46, 0x7a4a3a);
+    cush.position.set(seat.x, FLOOR + 0.50, seat.z); g.add(cush);
+    const pipe1 = box(0.48, 0.03, 0.48, 0x5a352a);
+    pipe1.position.set(seat.x, FLOOR + 0.58, seat.z); g.add(pipe1);
+    const backr = box(0.48, 0.62, 0.14, 0x7a4a3a);
+    backr.position.set(seat.x, FLOOR + 0.90, seat.z - 0.26); backr.rotation.x = -0.08; g.add(backr);
+    const head = box(0.30, 0.16, 0.10, 0x5a352a);
+    head.position.set(seat.x, FLOOR + 1.30, seat.z - 0.30); g.add(head);
+    const ped = box(0.34, 0.36, 0.34, 0x3a3632);
+    ped.position.set(seat.x, FLOOR + 0.20, seat.z); g.add(ped);
+
+    // the dash carries INSTRUMENTS now, not just a slab: binnacle, gauges, radio, vents
     const dash = box(T.wide - 0.10, 0.24, 0.40, 0x4a4038);
     dash.position.set(0, 1.78, T.len / 2 - 0.32); g.add(dash);
+    const binn = box(0.5, 0.16, 0.12, 0x3a3632);
+    binn.position.set(seat.x, 1.94, T.len / 2 - 0.30); binn.rotation.x = -0.35; g.add(binn);
+    for (const [gx, gc] of [[-0.13, 0xdfe9ee], [0.02, 0xdfe9ee], [0.15, 0xe8a63a]]) {
+      const dial = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.02, 12),
+        lam({ color: gc, emissive: 0x1f2a30 }));
+      dial.rotation.x = Math.PI / 2 - 0.35;
+      dial.position.set(seat.x + gx, 1.97, T.len / 2 - 0.24); g.add(dial);
+    }
+    // THE RADIO — the bible's business surface (weather + Frostline chatter, later)
+    const radio = box(0.34, 0.12, 0.08, 0x2f2a24);
+    radio.position.set(0, 1.86, T.len / 2 - 0.26); g.add(radio);
+    const dialR = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.03, 10),
+      lam({ color: 0xe8b04b }));
+    dialR.rotation.x = Math.PI / 2; dialR.position.set(0.10, 1.86, T.len / 2 - 0.235); g.add(dialR);
+    for (const vx of [-0.75, 0.75]) {
+      const vent = box(0.16, 0.07, 0.03, 0x3a3632);
+      vent.position.set(vx, 1.90, T.len / 2 - 0.26); g.add(vent);
+    }
+    // steering column + wheel with a horn cap, pedals, gear lever, sun visor
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.45, 8), lam({ color: 0x3a3632 }));
+    col.rotation.x = 1.2; col.position.set(seat.x, 1.80, T.len / 2 - 0.44); g.add(col);
     const wheel = new THREE.Mesh(new THREE.TorusGeometry(0.20, 0.03, 8, 20), lam({ color: 0x59504a }));
     wheel.position.set(seat.x, 1.98, T.len / 2 - 0.52); wheel.rotation.x = 1.2; g.add(wheel);
+    const hornCap = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.03, 10), lam({ color: 0x8a3f34 }));
+    hornCap.rotation.x = 1.2; hornCap.position.set(seat.x, 1.98, T.len / 2 - 0.52); g.add(hornCap);
+    for (const px of [-0.10, 0.08]) {
+      const pedal = box(0.10, 0.03, 0.14, 0x2f2a24);
+      pedal.position.set(seat.x + px, FLOOR + 0.10, T.len / 2 - 0.50);
+      pedal.rotation.x = -0.5; g.add(pedal);
+    }
+    const lever = box(0.03, 0.30, 0.03, 0x3a3632);
+    lever.position.set(seat.x - 0.34, FLOOR + 0.62, seat.z + 0.30); lever.rotation.z = 0.25; g.add(lever);
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), lam({ color: 0xe8dfc6 }));
+    knob.position.set(seat.x - 0.38, FLOOR + 0.78, seat.z + 0.30); g.add(knob);
+    const visor = box(0.55, 0.02, 0.16, 0x5a544c);
+    visor.position.set(seat.x, 2.68, T.len / 2 - 0.18); visor.rotation.x = 0.35; g.add(visor);
+    // the rear-view mirror — you can't see behind, but a cab without one reads wrong
+    const rvm = box(0.30, 0.09, 0.03, 0x2f2a24);
+    rvm.position.set(0, 2.58, T.len / 2 - 0.22); g.add(rvm);
+
     const clipS = at('clipboard');
     const clip = box(0.28, 0.02, 0.36, 0xe8dfc6);
     clip.position.set(clipS.x, 1.92, T.len / 2 - 0.36); clip.rotation.x = -0.16; g.add(clip);
+    // a coffee ring and a pencil on the clipboard — FRESH CUT's notebook, transposed
+    const pencil = box(0.015, 0.015, 0.16, 0x8a3f34);
+    pencil.position.set(clipS.x + 0.09, 1.935, T.len / 2 - 0.34); pencil.rotation.y = 0.5; g.add(pencil);
 
     // ⚠️ THE INTERIOR NEEDS ITS OWN LIGHT. The hemisphere light gives downward-facing
     // faces the GROUND colour, so the ceiling of an enclosed box renders near-black and
@@ -776,6 +870,18 @@ export class View {
 
     this._refreshBoard(sim);
     this._holdItem(sim);
+
+    // ⚠️ THE SAFETY KIT WORKS WHILE YOU SERVE — the same statute as the mirror. The stop
+    // arm swings out and the flashers blink amber whenever you're parked with the window
+    // open, and fold away when you pull off. View-only; the sim never reads them.
+    const serving = sim.truck.parked && sim.windowOpen;
+    // ⚠️ MINUS. The arm hangs on the kerb-side (local -x) corner and rotation.y maps its
+    // pole (local +z) to (sin θ, 0, cos θ) — so +π/2 swings it INTO the bodywork and out
+    // through the far side. -π/2 is "out over the kerb", where a stop arm goes.
+    const armWant = serving ? -Math.PI / 2 : 0;
+    this.stopArm.rotation.y += (armWant - this.stopArm.rotation.y) * Math.min(1, dt * 4);
+    const blink = serving && (t % 0.9 < 0.45);
+    for (const fl of this.flashers) fl.material.emissive.setHex(blink ? 0xcc7a10 : 0x000000);
 
     // the machine is visibly going while it churns — the lever swings
     if (this.churnLever) this.churnLever.rotation.x = sim.churning ? Math.sin(t * 7) * 0.55 : 0;

@@ -8,7 +8,30 @@
 
 ---
 
-## Status — Phase 2, the churn bay · 2026-08-11
+## Status — M3/M4, the truck is a place · 2026-08-12→17
+
+**M3 — walkable interior (Kyle's call: "the truck should be a moveable space").** The crew
+lives in **truck-local space** (moves with the truck for free). WASD walks when you're out
+of the seat, mouse looks, **E uses whatever you're facing**, F puts it back. One pair of
+hands. Stations replace menus — the §7 "cramped topology", laid out to break the kitchen
+work triangle on purpose: kids' bars forward-left, soft serve back on the kerb side, the
+window between them. **The seat is a station**: getting up parks you; sitting back down is
+where the mirror check lives. Menu buttons are DELETED — you fetch what they ask for.
+The camera collapsed to one thing: the crew's own eyes.
+
+**M4 — the truck looks like the truck.** Painted livery on BOTH flanks (canvas art: band,
+pinstripe, scoop, CY'S), step-van shell with chassis/skirt/fenders/wheel wells, snout,
+bumpers, grille, wing mirrors, scalloped awning, swirl cone. Interior: chequer-plate
+floor, steel counter, **a diegetic chalkboard menu** carrying your real prices (repainted
+on change — the tycoon UI made physical), interior lights, and a visible held item shaped
+by what it is. Cab furnished: sprung seat, binnacle + gauges, radio, vents, pedals, gear
+lever, visor, rear-view, horn cap, pencil on the clipboard. Rear: door seams + hinges,
+**the SLOW CHILDREN CROSSING sign**, amber flashers that blink while serving, and **a
+stop arm that swings out over the kerb** — the same 1978 Detroit statute as the mirror.
+Yards fixed: `yardBand()` in the map module + a battery assertion, because trees stood in
+the road (see trap 41).
+
+## Phase 2, the churn bay · 2026-08-11
 
 **The fourth pillar, "invent the treats" — and the last unbuilt item in the bible's own
 v0.1 slice.** Park, turn around, three steps: a modelled bay in the back of the truck with
@@ -291,6 +314,37 @@ Kept because a green test suite is not a working game, and three of these ran fu
 40. **A legendary floor must actually raise something.** A floor sitting under what the
     ingredients already reach is a decorative label, not a discovery worth hunting — the
     battery now asserts each one lifts at least one stat, as well as lowering none.
+
+### M3/M4 — the truck as a place
+41. **Trees stood in the road.** Yard props were placed at `front + <metres>` while the
+    run-out was ALSO measured from the house centre — double-counting 2.3 m. Trees landed
+    0.2–1.9 m from the street centreline; every mailbox sat on the white line. Placement
+    now lives in `hazel-park.js` as `yardBand()` (it is geometry, so it belongs with the
+    geometry) and the soak asserts no band reaches the road.
+42. **The bot fought itself out of the seat.** It stood up at the top of every parked
+    frame and sat back down at the bottom of the same frame — parked once, departed zero
+    times, sat there for 489 s of a 545 s day. `leaving` must be decided BEFORE standing.
+43. **Nearest-station interact sat you down when you reached for the freezer.** The aisle
+    is 1.44 m wide with stations on both walls, so several sit inside reach at once.
+    Interaction is DIRECTIONAL (facing cos ≥ 0.35) — also how first-person actually works.
+44. **The hatch's open/closed heights were hardcoded** and went stale when the window
+    moved; "open" still covered two thirds of the aperture. They live on the mesh now,
+    derived from the opening it covers.
+45. **The livery drew into a 146-px strip.** `make()` assumed a square canvas; a 5.5×0.8 m
+    panel mapped from 1024² left 86% blank cream — the flank looked untouched after being
+    painted. `make()` takes [w,h]; always draw across the WHOLE canvas you will map.
+46. **The kerb side was a blank white box** — the painted flank was on the truck's LEFT,
+    and the serving side, the only side the town ever sees, had nothing. Review a vehicle
+    from OUTSIDE, from the side the game is about.
+47. **A wheel arch is a hole, not a lump** — cream boxes beside the tyres read as bricks
+    glued on. Dark half-cylinder well + torus fender over it.
+48. **An enclosed interior needs its own light.** The hemisphere light gives downward
+    faces the ground colour, so the ceiling rendered near-black and the bay was a cave.
+49. **The stop arm swings MINUS π/2.** It hangs on the kerb-side (local −x) corner and
+    rotation.y maps its pole to (sin θ, 0, cos θ) — +π/2 swings it through the bodywork.
+50. **The bot must WALK the truck.** Letting it serve from the seat would quietly stop
+    the trials measuring the game: walking time is now a real economic cost. A bot that
+    teleports measures a truck nobody plays.
 
 ### The view
 15. **A hidden Browser-pane tab suspends rAF**, so `draw()` never runs, the camera is never
