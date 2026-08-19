@@ -258,6 +258,13 @@ export class UI {
       <table>${rows}</table>
       <h3>the depot</h3>
       <table>${shop}</table>
+      <h3>the machine</h3>
+      <div class="note">${g.grime >= D.SOFTSERVE.refusesAt
+        ? '<b>it refuses.</b> shut the window, stand at the spigot, and give it the hour it is owed.'
+        : g.grime >= D.SOFTSERVE.tastesOffAt
+          ? `grime at ${(g.grime * 100) | 0}%. the cones are starting to taste of yesterday. they can tell.`
+          : g.grime >= 0.15 ? `grime at ${(g.grime * 100) | 0}%. fine for now. it won't stay fine.`
+            : 'clean. it hums instead of whining.'}</div>
       <h3>the street</h3>
       <table>${blocks}</table>
       <h3>in cy's hand, on the back</h3>

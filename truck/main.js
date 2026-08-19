@@ -95,7 +95,7 @@ function newDay() {
     cash: save.cash, rep: save.rep, noteMisses: save.noteMisses,
     tickets: save.tickets, annoy: save.annoy, prices: save.prices,
     owned: save.owned, met: save.regulars, saidMid: save.saidMid,
-    invented: save.invented, discovered: save.discovered,
+    invented: save.invented, discovered: save.discovered, grime: save.grime,
     cb: {
       cameOut: () => { },
       served: (p, note) => { if (note === 'right' || note === 'mercy') sfx.coin(); else sfx.nope(); },
@@ -115,6 +115,9 @@ function newDay() {
       churnStart: (r) => { sfx.hatch(); ui.hint('churning ' + D.flavourName(r) + '. this is costing you the afternoon.', 5000); },
       churnDone: (f) => { sfx.ding(); ui.hint(`${D.CHURN.batch} of "${f.label}" in the box. go and sell them.`, 7000); },
       legendary: (l) => { sfx.coin(); ui.hint(`— ${l.name} —  you found one of cy's.`, 9000); },
+      cleanStart: () => { sfx.hatch(); ui.hint('you shut the window and start on the machine. this takes as long as it takes.', 6000); },
+      cleaned: () => { sfx.ding(); ui.hint('the machine runs quiet again. it even smells right.', 6000); },
+      tastesOff: () => { sfx.nope(); ui.hint('“…tastes off.” they finish it anyway. they will remember it.', 5000); },
       mirror: () => sfx.waveAt(),
       song: (on) => { on ? sfx.songOn() : sfx.songOff(); },
       dayEnd: (s) => endDay(s),
@@ -146,6 +149,7 @@ function endDay(s) {
   // the recipes you worked out are yours for good; the batch in the box is not
   save.invented = G.invented.map(f => ({ ...f }));
   save.discovered = { ...G.discovered };
+  save.grime = G.grime;                  // the machine stays dirty overnight. of course it does.
   persist();
   ui.dayEnd(s, G);
 }
@@ -307,7 +311,10 @@ function draw(dtWall) {
             : p.stage === 'ask' ? (G.crew.hands ? `hand over ${G.labelOf(G.crew.hands)}` : 'you have nothing in your hands')
               : p.stage === 'pay' ? 'give them their change'
                 : 'they are short — decide';
-      } else if (st.kind === 'take' && G.crew.hands) verb = 'hands full — F to put it back';
+      } else if (st.id === 'spigot' && G.cleaning) verb = `cleaning — ${Math.ceil(G.cleaning.dur - G.cleaning.t)}s`;
+      else if (st.id === 'spigot' && !G.windowOpen && G.grime >= 0.15) verb = `clean it (grime ${(G.grime * 100) | 0}%)`;
+      else if (st.id === 'spigot' && G.grime >= D.SOFTSERVE.refusesAt) verb = 'it refuses — clean it first';
+      else if (st.kind === 'take' && G.crew.hands) verb = 'hands full — F to put it back';
       pr = `${st.label} — E · ${verb}`;
     } else pr = hands || 'W A S D to move about the truck';
   }

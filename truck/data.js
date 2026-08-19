@@ -106,10 +106,17 @@ export const COLD = {
   // CLOCK (pillar P2) — if a lazy day comfortably reaches dusk with cold to spare, the
   // gauge is decoration and the day is really being ended by a timer. The good tension
   // falls out of this for free: a BUSY day ends EARLIER, because selling costs cold.
-  drainBase: 0.00165,       // per sim-second, doing nothing
+  //
+  // ⚠️ HEAT IS A FIRST-ORDER ENEMY, rebudgeted 2026-08-18. At drainHeat 0.00026 the
+  // weather's heatMul multiplied a term worth ~4% of the day — a 1.9x scorcher moved the
+  // box by minutes and Trial E caught the day NOT shortening. The budget below moves a
+  // fifth of the base drain into the heat term (same warm-day total), so the scorcher
+  // genuinely eats the afternoon and a mild day genuinely stretches it. The real plates
+  // are rated "12 hours at 90F" — the rating names heat because heat is the enemy.
+  drainBase: 0.00130,       // per sim-second, doing nothing
   drainWindow: 0.00130,     // ADDITIONAL, while the serving window is open
   drainMoving: -0.00012,    // moving air over the box helps a little. Yes, really.
-  drainHeat: 0.00026,       // ADDITIONAL at full heat (scaled by the heat curve)
+  drainHeat: 0.00062,       // ADDITIONAL at full heat (x the heat curve x weather.heatMul)
   perSaleUnit: 0.0016,      // x the item's `cold` — the hatch is open, the arm is in there
 
   softAt: 0.28,             // below this the load starts going soft
@@ -192,7 +199,12 @@ export const MENU = [
   { key: 'eyes',  label: 'the one with the eyes', price: 250, cost: 105, cold: 0.9, kid: 1.00, adult: 0.15, rep: 1.35, melt: 0.75 },
   { key: 'bomb',  label: 'a bomb pop',            price: 200, cost:  68, cold: 0.8, kid: 0.90, adult: 0.25, rep: 1.10, melt: 0.55 },
   { key: 'scoop', label: 'a scoop',               price: 300, cost:  63, cold: 1.2, kid: 0.60, adult: 0.70, rep: 1.00, melt: 0.45 },
-  { key: 'cone',  label: 'a soft serve cone',     price: 350, cost:  60, cold: 1.4, kid: 0.50, adult: 1.00, rep: 0.85, melt: 0.35 },
+  // ⚠️ 325, not 350. At $3.50 the LIST price sat above every street ceiling but
+  // Sycamore's ($3.40), so the best-margin item on the truck balked nearly everywhere
+  // unless the player thought to discount it — the §10 "soft serve is the good money"
+  // economy was structurally OFF by default. At $3.25 Maple ($3.00) buys and the trailer
+  // end of Birch ($2.50) still refuses, which is the designed split. Food cost ~18%.
+  { key: 'cone',  label: 'a soft serve cone',     price: 325, cost:  60, cold: 1.4, kid: 0.50, adult: 1.00, rep: 0.85, melt: 0.35 },
   { key: 'pop',   label: 'a freeze pop',          price: 100, cost:  30, cold: 0.5, kid: 0.80, adult: 0.20, rep: 1.20, melt: 0.65 },
 ];
 export const MENU_BY_KEY = Object.fromEntries(MENU.map(m => [m.key, m]));
@@ -384,6 +396,25 @@ export const LEGENDARIES = [
     floor: { sweet: 0.90, novel: 0.85, melt: 0.72 }, hint: "cy: 'peanut and a cookie, on a stick. the men at vance used to buy two.'" },
 ];
 
+// ---------------------------------------------------------------------------
+// THE SOFT-SERVE MACHINE (bible §10). The best margin on the truck is gated by a chore:
+// the real machine takes ~90 minutes to clean, and the trade's advice is to never skip
+// it. ⚠️ P4 forbids ambushes, so there are NO inspection dice here — the pressure is a
+// GRIME METER you watch climb, in three visible stages: fine → "tastes off" (a slow rep
+// drip per cone, and they tell you) → THE MACHINE REFUSES until cleaned. The same shape
+// as the note's repo teeth: never a game-over, always a countdown you chose to ignore.
+// Cleaning costs TIME, not cold, with the window shut — a mild-day job, which is what
+// finally gives the scorcher forecast a use.
+// ---------------------------------------------------------------------------
+export const SOFTSERVE = {
+  grimePerCone: 0.05,       // ~20 cones from clean to refusing
+  tastesOffAt: 0.55,        // the rep drip begins, and customers start saying so
+  refusesAt: 0.95,          // the spigot will not pull until you clean it
+  cleanSeconds: 60,         // a real bite out of the afternoon (~40 sim-minutes)
+  offRepLoss: 0.9,          // per cone served through a dirty machine
+  offSayChance: 0.4,        // how often they mention it (sim rng — deterministic)
+};
+
 export const CHURN = {
   seconds: 38,          // sim-seconds in the bay — about half an hour of the afternoon
   coldCost: 0.030,      // the machine runs off the same box you are selling out of
@@ -406,8 +437,11 @@ export const UPGRADES = [
     mod: { coldMul: 0.76 } },
   { key: 'horn', name: 'the good speaker horn', cost: 5200, sub: 'they hear you a street earlier',
     mod: { radiusMul: 1.28 } },
-  { key: 'hatch', name: 'the wide hatch', cost: 8000, sub: 'you can work two of them at once',
-    mod: { queueAdd: 2, serveMul: 0.82 } },
+  // ⚠️ serveMul ONLY — queueAdd was measured at MINUS 20%. A deeper queue is people
+  // committed to a line the stop ends before serving; they'd have been better off at
+  // their kerbs. What the wide hatch honestly sells is working the aisle faster.
+  { key: 'hatch', name: 'the wide hatch', cost: 8000, sub: 'the window stops being a bottleneck',
+    mod: { serveMul: 0.78 } },
   // ⚠️ speedMul ALONE measured at exactly 0% — the day is limited by COLD, not by
   // distance, so going faster buys you nothing you can sell. A cooler engine bay under
   // the box is the real reason to pay a mechanic, and it's physically why these trucks

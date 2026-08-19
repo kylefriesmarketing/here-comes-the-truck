@@ -65,6 +65,10 @@ export class Game {
     this.owned = { ...(opts.owned || {}) };
     this.mod = D.mods(this.owned);
 
+    // the soft-serve machine's grime — carried day to day; cleaning is a chore you plan
+    this.grime = opts.grime || 0;
+    this.cleaning = null;
+
     this.stock = {};
     this.prices = {};
     // ⚠️ 11, not 20. At 20 of every line you could never run out, so the deep chest was
@@ -104,6 +108,7 @@ export class Game {
       served: 0, wrong: 0, walkedOff: 0, cameOut: 0, mercy: 0,
       refused: 0, shorted: 0, shortCaught: 0, balked: 0, impossible: 0,
       bumps: 0, songSec: 0, driven: 0, churned: 0, legendaries: 0, inventedSold: 0,
+      cleaned: 0, tastedOff: 0,
     };
   }
 
@@ -217,9 +222,16 @@ export class Game {
     // Move relative to where the crew is LOOKING, inside the truck's own frame.
     // ⚠️ Same convention as everything else: forward = (sin, cos); the crew's RIGHT is
     // (-cos, sin), so a positive strafe must subtract cos from x.
+    //
+    // ⚠️ serveMul is WIRED HERE. Since the interior became a place, "serving faster" IS
+    // walking the aisle faster — the wide hatch clears the deck between window and bins.
+    // The knob sat defined-but-read-by-nothing for a whole milestone (Victory Lap trap
+    // 11: if a constant is referenced only from mods(), that's the smell) and the trial
+    // was pricing an upgrade that did nothing.
+    const spd = C.walkSpeed / (this.mod.serveMul || 1);
     const s = Math.sin(cr.yaw), c = Math.cos(cr.yaw);
-    const dx = (fw * s - st * c) * C.walkSpeed * dt;
-    const dz = (fw * c + st * s) * C.walkSpeed * dt;
+    const dx = (fw * s - st * c) * spd * dt;
+    const dz = (fw * c + st * s) * spd * dt;
     cr.x = Math.max(C.aisle.x0, Math.min(C.aisle.x1, cr.x + dx));
     cr.z = Math.max(C.aisle.z0, Math.min(C.aisle.z1, cr.z + dz));
   }
@@ -460,6 +472,14 @@ export class Game {
     // and `serving` stays null forever.
     const inQueue = (p) => p.state === 'toWindow' || p.state === 'window';
 
+    // ⚠️ SELF-HEAL THE LINE. Anything that removes the front of the queue WITHOUT going
+    // through _finish (a patience timeout, the bot or a test kicking an impossible order,
+    // any future path) orphans slot 0 — nobody behind ever advances, `serving` stays null,
+    // and the whole line wedges until every last one of them times out. Measured: 3 asks
+    // in 300 seconds, and the policy bot had been quietly wedging its own queue on every
+    // balk in every trial to date. One line, covers every kick path forever.
+    if (!this.serving && this.people.some(inQueue) && !this.people.some(p => inQueue(p) && (p.slot || 0) === 0)) this._requeue();
+
     for (const p of this.people) {
       p.t += dt;
       const spd = p.kid ? C.runSpeed : C.walkSpeed;
@@ -557,6 +577,13 @@ export class Game {
       this.churning.t += dt;
       this.cold = Math.max(0, this.cold - D.CHURN.coldCost * dt / D.CHURN.seconds);
       if (this.churning.t >= this.churning.dur) this._finishChurn();
+    }
+    if (this.cleaning) {
+      this.cleaning.t += dt;
+      if (this.cleaning.t >= this.cleaning.dur) {
+        this.cleaning = null; this.grime = 0; this.stats.cleaned++;
+        this.cb.cleaned && this.cb.cleaned();
+      }
     }
     this.cold -= D.coldDrain({
       windowOpen: this.windowOpen,
@@ -680,6 +707,7 @@ export class Game {
         this.cb.seat && this.cb.seat(false);
         return { ok: true, seated: false, parked: true };
       }
+      if (this.cleaning) return { ok: false, msg: 'you are elbow-deep in the machine. finish the job.' };
       if (this.truck.parked) {
         const r = this._act_depart();          // the mirror can refuse this
         if (!r.ok) return r;
@@ -693,6 +721,15 @@ export class Game {
 
     // --- picking something up. ONE PAIR OF HANDS. ---
     if (st.kind === 'take' || st.kind === 'takeNew') {
+      // ⚠️ THE SPIGOT IS THE MACHINE. Window open: E pulls a cone. Window SHUT and
+      // parked: E starts the clean — one button, disambiguated by the state of the
+      // truck, exactly like the seat. And past `refusesAt` it will not pull at all:
+      // that is the §10 gate with P4 teeth — a refusal you watched coming, not dice.
+      if (st.id === 'spigot') {
+        if (!this.windowOpen && this.truck.parked) return this._act_clean();
+        if (this.grime >= D.SOFTSERVE.refusesAt)
+          return { ok: false, msg: 'the machine whines and gives you nothing. it needs cleaning.' };
+      }
       if (cr.hands) return { ok: false, msg: `your hands are full — ${this.labelOf(cr.hands)}` };
       let key = st.item;
       if (st.kind === 'takeNew') {
@@ -722,6 +759,18 @@ export class Game {
       if (p.stage === 'short') return { ok: false, msg: 'they are short — let it go, or not', decide: true };
     }
     return { ok: false, msg: 'nothing to do here' };
+  }
+
+  /** Clean the soft-serve machine. Time, not cold; the window stays shut. */
+  _act_clean() {
+    if (this.cleaning) return { ok: false, msg: 'you are already elbow-deep in it' };
+    if (this.churning) return { ok: false, msg: 'the churn is going — one machine at a time' };
+    if (!this.truck.parked) return { ok: false, msg: 'park first' };
+    if (this.windowOpen) return { ok: false, msg: 'shut the window. nobody wants to watch this part.' };
+    if (this.grime < 0.15) return { ok: false, msg: 'it\'s clean enough. sell something.' };
+    this.cleaning = { t: 0, dur: D.SOFTSERVE.cleanSeconds };
+    this.cb.cleanStart && this.cb.cleanStart();
+    return { ok: true, dur: D.SOFTSERVE.cleanSeconds };
   }
 
   /** Put back whatever is in your hands. */
@@ -789,6 +838,16 @@ export class Game {
 
     this.stock[key] -= qty;
     if (item.invented) this.stats.inventedSold += qty;
+    // every cone through the machine dirties it; past `tastesOffAt` they can tell,
+    // and some of them say so (sim rng — deterministic, replays identically)
+    if (key === 'cone') {
+      this.grime = Math.min(1, this.grime + D.SOFTSERVE.grimePerCone);
+      if (this.grime > D.SOFTSERVE.tastesOffAt) {
+        this.rep -= D.SOFTSERVE.offRepLoss;
+        this.stats.tastedOff++;
+        if (this.chance(D.SOFTSERVE.offSayChance)) this.cb.tastesOff && this.cb.tastesOff(p);
+      }
+    }
     this.cold = Math.max(0, this.cold - item.cold * D.COLD.perSaleUnit * qty);
     p.gave = key; p.price = price;
 
@@ -883,8 +942,14 @@ export class Game {
    */
   _act_churn(recipe) {
     if (this.churning) return { ok: false, msg: 'the machine is already going' };
-    if (!this.truck.parked) return { ok: false, msg: 'you cannot churn while driving' };
-    if (this.windowOpen) return { ok: false, msg: 'shut the window first' };
+    if (!this.truck.parked) return { ok: false, msg: 'you cannot load the hopper while driving' };
+    // ⚠️ NO window-shut requirement. The machine RUNS IN PARALLEL — you load it parked,
+    // then serve while it churns, and it dings when the batch lands (Overcooked's shape:
+    // machines work while you do). The first design stopped the world for 38 s, and the
+    // moment the queue wedge was fixed those 38 s of window time cost more than any
+    // flavour earned — Trial D measured the whole bay at MINUS 7%. The cost of inventing
+    // is now the walk, the cold and the ingredients, not a dead afternoon.
+    if (this.cleaning) return { ok: false, msg: 'finish cleaning first — one job at a time back here' };
     if (!D.BASE_BY_KEY[recipe && recipe.base]) return { ok: false, msg: 'pick a base' };
     const mixins = (recipe.mixins || []).slice(0, D.CHURN.maxMixins);
     const r = { base: recipe.base, mixins, finish: recipe.finish || 'none' };
@@ -970,6 +1035,7 @@ export class Game {
   summary() {
     return {
       day: this.day, why: this.ending, weather: this.weather.key,
+      grime: Math.round(this.grime * 100) / 100, cleaned: this.stats.cleaned,
       took: this.drawer, cash: this.cash, rep: Math.round(this.rep * 10) / 10,
       coldLeft: Math.round(this.cold * 1000) / 1000,
       served: this.stats.served, cameOut: this.stats.cameOut,
@@ -990,7 +1056,8 @@ export class Game {
   snapshot() {
     return {
       v: D.VERSION, seed: this.seed, rs: this._rs, day: this.day, t: this.t,
-      weather: this.weather.key,
+      weather: this.weather.key, grime: this.grime,
+      cleaning: this.cleaning ? { ...this.cleaning } : null,
       truck: { ...this.truck }, crew: { ...this.crew },
       cold: this.cold, cash: this.cash, drawer: this.drawer,
       rep: this.rep, noiseHeat: this.noiseHeat, tickets: this.tickets,
@@ -1015,6 +1082,8 @@ export class Game {
   restore(s) {
     this._rs = s.rs >>> 0; this.day = s.day; this.t = s.t;
     if (s.weather) this.weather = D.WEATHER.find(w => w.key === s.weather) || this.weather;
+    this.grime = s.grime || 0;
+    this.cleaning = s.cleaning ? { ...s.cleaning } : null;
     this.truck = { ...s.truck };
     if (s.crew) this.crew = { ...s.crew };
     this.cold = s.cold; this.cash = s.cash;
@@ -1211,16 +1280,25 @@ export function soakRun(seed, opts = {}) {
       // ⚠️ `leaving` has to be decided BEFORE standing up. Without it the bot stood up at
       // the top of every parked frame and tried to sit down at the bottom of the same
       // frame — it parked once, fought itself for the entire day, and departed zero times.
-      const leaving = !g.churning && (stopT > 18 + patience * 40 || (g.queueLen() === 0 && stopT > 12));
+      const leaving = !g.cleaning && (stopT > 18 + patience * 40 || (g.queueLen() === 0 && stopT > 12));
+      // ⚠️ decide the chore BEFORE the window: the bot used to open up on every parked
+      // frame, and cleaning needs the window shut, so the disciplined policy could never
+      // actually start the clean it was written to perform
+      const wantsClean = P.clean && g.grime >= D.SOFTSERVE.tastesOffAt && !g.churning;
+      if (wantsClean && !g.cleaning) {
+        if (g.windowOpen) act('window', false);
+        else if (walkTo(D.STATION_BY_ID.spigot)) act('interact');
+      }
       if (!leaving && g.crew.seated) act('interact');     // get out of the seat and go to work
 
       if (P.churn && !churned && !g.churning) { act('churn', P.churn); churned = true; }
-      if (!g.churning && !g.windowOpen) act('window', true);
+      // the churn runs in parallel now — only the CLEAN keeps the window shut
+      if (!g.cleaning && !wantsClean && !g.windowOpen) act('window', true);
       // The law says silence the instant you're stationary — but every stop is a gamble:
       // a few more seconds of song pulls another kid off the next block. songGrace is
       // exactly how many seconds of that bribe this policy takes.
       if (g.song && stopT >= songGrace) act('song', false);
-      const p = leaving ? null : (g.churning ? null : g.serving);
+      const p = (leaving || g.cleaning) ? null : g.serving;   // serve straight through a churn
       if (p) {
         // decide ONCE per customer what we're going to hand them, then go and get it
         if (wantKey === null || wantFor !== p.id) {
@@ -1233,7 +1311,15 @@ export function soakRun(seed, opts = {}) {
             else {
               const st = g.stationFor(wantKey);
               if (!st) wantKey = p.want;
-              else if (walkTo(st)) { if (!act('interact').ok) wantKey = p.want; }
+              else if (walkTo(st)) {
+                if (!act('interact').ok) {
+                  // ⚠️ fall back to something else IN STOCK — retrying the same refusal
+                  // (a filthy spigot, an empty bin) stalls the bot at one station until
+                  // the customer's patience runs out, every customer, all afternoon
+                  const alt = g.menu().find(m => m.key !== wantKey && (g.stock[m.key] || 0) > 0);
+                  wantKey = alt ? alt.key : null;
+                }
+              }
             }
           } else if (walkTo(D.STATION_BY_ID.window)) {
             const r = act('interact');

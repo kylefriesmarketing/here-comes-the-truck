@@ -8,6 +8,30 @@
 
 ---
 
+## Status — M6, the machine and the great un-wedging · 2026-08-18
+
+**The soft-serve machine is a real chore (§10, with P4 teeth — no dice):** grime climbs
+per cone, past 55% the cones taste of yesterday (a rep drip, and they say so), past 95%
+**the spigot refuses** until you shut the window, stand at it, and give it its 60 seconds.
+Grime survives the night. E at the spigot pulls a cone with the window open and starts
+the clean with it shut — one button, disambiguated by the truck, like the seat.
+
+**And the machine test caught the biggest bug in the game:** any customer kicked or timing
+out at the window left without `_requeue()` — slot 0 orphaned, `serving` null, the whole
+line wedged until everyone's patience expired. **The policy bot had been wedging its own
+queue on every balk in every trial ever run.** Fixed with a self-healing line. Baseline
+gross jumped $41→$65/day and the trial noise floor collapsed from 54–101% to **13–29%**
+— the wedge WAS most of the noise. Everything measured before M6 needs re-reading.
+
+Post-fix corrections the cleaner measurements forced: the **churn runs in parallel** now
+(stop-the-world cost more than any flavour earned once window time was worth something);
+**heat rebudgeted** into a first-order enemy (the scorcher now takes 39% less AND ends
+0.5 h earlier); the **cone listed above every street ceiling but one** and never sold at
+default prices; and the **wide hatch's `serveMul` was a dead knob** — wiring it exposed
+`queueAdd` as actively harmful (−20%), so the hatch now honestly sells walking speed.
+Watch items: the bay pays ~0% at n=6 (want-selection is uniform — the appeal stats don't
+drive demand yet; that's the next system), and the hatch reads −0%.
+
 ## Status — M5, the weather and the radio · 2026-08-17
 
 **Per-day weather** (§6): mild / warm / hot / **scorcher**, rolled from a salted hash of
@@ -358,6 +382,30 @@ Kept because a green test suite is not a working game, and three of these ran fu
 50. **The bot must WALK the truck.** Letting it serve from the seat would quietly stop
     the trials measuring the game: walking time is now a real economic cost. A bot that
     teleports measures a truck nobody plays.
+
+### M6 — the machine and the un-wedging
+51. **⚠️⚠️ THE QUEUE WEDGED ON EVERY KICK.** A window-timeout or an external kick
+    (impossible order, balk) set `state='leaving'` without `_requeue()` — slot 0 orphaned,
+    nobody advanced, `serving` stayed null until every queued customer timed out. Measured:
+    3 asks in 300 s. The bot had done this on every balk in EVERY trial. The fix is a
+    self-heal in `_people` (queue non-empty + no slot 0 → requeue), one line, covers every
+    kick path forever. **After any systemic fix, re-baseline every measurement**: gross
+    went $41→$65 and the noise floor 54–101% → 13–29%. The wedge WAS the noise.
+52. **The cone listed above every street ceiling but Sycamore's** — the best-margin item
+    balked at default prices nearly everywhere, found only because a test forced cones on
+    Maple. Check every default price against every ceiling.
+53. **A multiplier on a term worth 4% of the day is decoration.** The scorcher's 1.9×
+    heatMul multiplied drainHeat 0.00026 and Trial E caught the day not shortening.
+    Budget moved from base into heat; same warm-day total.
+54. **Wiring a dead knob can reveal its neighbour is harmful.** `serveMul` was read by
+    nothing (the trap-11 smell); wiring it into walk speed exposed the hatch's `queueAdd`
+    at −20% — a deeper queue is people committed to a line the stop ends before serving.
+55. **A stop-the-world verb's cost scales with everything else you fix.** The 38 s
+    window-shut churn was fine when the queue wedged anyway; un-wedged, it cost more than
+    any flavour earned (Trial D at −7%). The machine runs in parallel now; the clean
+    stays blocking because being elbow-deep IS the chore.
+56. **Test the failure path of the failure path**: the machine test only worked once its
+    kicks matched sim reality — and that mismatch is precisely what surfaced trap 51.
 
 ### The view
 15. **A hidden Browser-pane tab suspends rAF**, so `draw()` never runs, the camera is never

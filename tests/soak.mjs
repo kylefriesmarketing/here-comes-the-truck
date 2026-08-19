@@ -404,6 +404,69 @@ if (c.hash === a.hash) bad(`seeds 999 and 1000 produced identical runs — the s
   if (g3.weather.key !== 'scorcher') bad('pinned weather does not survive a save round-trip');
 }
 {
+  // THE SOFT-SERVE MACHINE (§10 with P4 teeth): grime climbs per cone, the customers
+  // start saying so, the spigot eventually REFUSES — never dice — and the clean resets
+  // it. All through the real act() paths, and the grime survives a save round-trip.
+  const g = new Game({ seed: 61, grime: 0.90 });
+  g.act('interact');                                   // out of the seat -> parked
+  const sp = D.STATION_BY_ID.spigot;
+  const stand = (gg) => { gg.crew.x = -0.4; gg.crew.z = sp.z; gg.crew.yaw = Math.atan2(sp.x + 0.4, 0); };
+  // push it past the refusal line by selling cones through the real serve path
+  g.act('song', true); g.act('window', true);
+  let refusals = 0, served = 0;
+  for (let i = 0; i < 60 * 300 && refusals === 0; i++) {
+    g.step(FIXED, {});
+    const p = g.serving; if (!p) continue;
+    if (p.stage === 'ask') {
+      stand(g);
+      const r = g.act('interact');                     // try to pull a cone
+      if (!r.ok && /needs cleaning/.test(r.msg || '')) { refusals++; break; }
+      if (r.ok) {
+        g.crew.x = -0.5; g.crew.z = D.STATION_BY_ID.window.z; g.crew.yaw = Math.atan2(-0.18, 0);
+        const s2 = g.act('serve', 'cone'); if (s2.ok) served++;
+        else { p.state = 'leaving'; g.serving = null; }
+        g.crew.hands = null;
+      }
+    } else if (p.stage === 'pay') g.act('change', D.changeDue(p.tender, p.price));
+    else if (p.stage === 'short') g.act('mercy');
+  }
+  console.log(`the machine:     started at 90% grime, served ${served} cones -> tastedOff ${g.stats.tastedOff}, refused after ${served}`);
+  if (refusals === 0) bad('the spigot never refused — the machine can be ignored forever (the §10 gate is open)');
+  if (g.stats.tastedOff === 0) bad('no cone ever tasted off on a filthy machine — the middle stage is inert');
+
+  // the clean: window shut, at the spigot, E — takes real time, then resets
+  g.act('window', false);
+  stand(g);
+  const c = g.act('interact');
+  if (!c.ok) bad(`could not start the clean: ${c.msg}`);
+  const sitDenied = (() => { const seat = D.STATION_BY_ID.seat; g.crew.x = seat.x; g.crew.z = seat.z - 0.5; g.crew.yaw = 0; return g.act('interact'); })();
+  if (sitDenied.ok) bad('you drove off elbow-deep in the machine — cleaning must block the seat');
+  for (let i = 0; i < 60 * (D.SOFTSERVE.cleanSeconds + 2); i++) g.step(FIXED, {});
+  if (g.grime !== 0) bad(`the clean finished but grime is ${g.grime}`);
+  else console.log(`                 refused the seat mid-clean, then reset to 0 after ${D.SOFTSERVE.cleanSeconds}s`);
+
+  // and grime must survive a save round-trip mid-filth
+  const h = new Game({ seed: 62, grime: 0.7 });
+  const h2 = new Game({ seed: 62 }).restore(JSON.parse(JSON.stringify(h.snapshot())));
+  if (Math.abs(h2.grime - 0.7) > 1e-9) bad('grime does not survive a save round-trip');
+}
+{
+  // ⚠️ THE LINE SELF-HEALS. A kick that bypasses _finish (impossible order, a balk, any
+  // external path) used to orphan slot 0 — nobody behind advanced, `serving` stayed null,
+  // the whole queue timed out one by one. Kick the front rudely; the line must recover.
+  const g = new Game({ seed: 63 });
+  g.act('interact'); g.act('song', true); g.act('window', true);
+  for (let i = 0; i < 60 * 90 && !g.serving; i++) g.step(FIXED, {});
+  if (!g.serving) bad('queue-heal test: nobody ever reached the window');
+  else {
+    g.serving.state = 'leaving'; g.serving = null;      // the rude kick, no _requeue
+    let healed = 0;
+    for (let i = 0; i < 60 * 30; i++) { g.step(FIXED, {}); if (g.serving) { healed = i / 60; break; } }
+    if (!g.serving) bad('THE LINE WEDGED — a kicked front customer orphaned slot 0 and nobody ever advanced');
+    else console.log(`the line:        kicked the front rudely -> next customer at the window in ${healed.toFixed(1)}s`);
+  }
+}
+{
   // per-item melt: a tough bar must outlast a soft one as the box warms
   const tough = D.softBelow(0.85), weak = D.softBelow(0.30);
   console.log(`melt:            a 0.85-melt item softens at cold ${tough.toFixed(3)}, a 0.30-melt at ${weak.toFixed(3)}`);
