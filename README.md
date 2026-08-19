@@ -8,6 +8,23 @@
 
 ---
 
+## Status — M7, the demand system · 2026-08-18
+
+**"Recipes aren't better or worse — they're aimed" (§10) is mechanical now.** What a
+customer asks for is drawn WEIGHTED by the item's appeal to who they are: kids ask for
+bars/pops **76%** of the time, adults for cones/scoops **69%** (measured through the real
+come-out path). The trade's demand/margin inversion is therefore real: the crowd mostly
+wants the depot's worst-margin lines, and the play is inventing something aimed —
+a sugar-maxed flavour competes with the character bar for kid asks at twice the margin;
+a high-novel one is soft-serve money without the machine. The bay tells you who a recipe
+is aimed at, from the same numbers the draw uses. The bot now also prices inventions
+into their novelty headroom, the way the bay's readout says to.
+
+**Trial D, the payoff:** the bay went from ~0% to **+10% (aimed at kids) / +12% (The
+Midnight)** — and *of it* sold jumped 4.3 → 7.5. Plain water ice still loses 8%, as an
+unaimed invention should. Trial E re-held (scorcher −41%, ends earlier).
+Watch items: the hatch reads 0% at $80 · mild vs warm flips run to run inside the noise.
+
 ## Status — M6, the machine and the great un-wedging · 2026-08-18
 
 **The soft-serve machine is a real chore (§10, with P4 teeth — no dice):** grime climbs
@@ -406,6 +423,10 @@ Kept because a green test suite is not a working game, and three of these ran fu
     stays blocking because being elbow-deep IS the chore.
 56. **Test the failure path of the failure path**: the machine test only worked once its
     kicks matched sim reality — and that mismatch is precisely what surfaced trap 51.
+57. **A data field read by nothing makes its promise a lie.** The `kid`/`adult` appeal
+    stats shipped on every item for three milestones while want-selection stayed uniform
+    — "recipes are aimed" was decoration, and only the bay's ~0% payback hinted at it.
+    Grep every stat for a reader (the data-file cousin of trap 11's `*Auto()` smell).
 
 ### The view
 15. **A hidden Browser-pane tab suspends rAF**, so `draw()` never runs, the camera is never

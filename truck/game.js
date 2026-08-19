@@ -424,7 +424,7 @@ export class Game {
     // ⚠️ only ask for what is actually in the box — otherwise an invented flavour you
     // have run out of keeps getting requested and every one of those is a dead sale
     const have = this.menu().filter(m => (this.stock[m.key] || 0) > 0);
-    const want = reg ? reg.wants : this.pick(have.length ? have : D.MENU).key;
+    const want = reg ? reg.wants : this._pickWant(kid, have.length ? have : D.MENU);
     const inv = !reg && this.invented.some(f => f.key === want);
     let said;
     if (impossible) { said = this.pick(D.IMPOSSIBLE_ORDERS); this.stats.impossible++; }
@@ -545,6 +545,25 @@ export class Game {
       }
       this.people = this.people.filter(p => p.state !== 'gone');
     }
+  }
+
+  /**
+   * THE DEMAND SYSTEM (bible §10). What a customer asks for is drawn WEIGHTED by the
+   * item's appeal to who they are — kids mostly want the low-margin depot bars, adults
+   * mostly want the soft serve, which is the trade's demand/margin inversion made
+   * mechanical. ⚠️ These `kid`/`adult` fields sat on every item for three milestones,
+   * read by NOTHING — want-selection was uniform, so the whole "recipes are AIMED"
+   * promise was decoration: a sugar-maxed invention drew exactly as many asks as plain
+   * water ice. One weighted draw off this.rng (same one call `pick` made — the sim
+   * stream's SHAPE is unchanged, its values shift, which re-baselines every trial).
+   */
+  _pickWant(kid, have) {
+    const w = have.map(m => Math.max(0.05, kid ? (m.kid || 0) : (m.adult || 0)));
+    let sum = 0;
+    for (const x of w) sum += x;
+    let r = this.rng() * sum;
+    for (let i = 0; i < have.length; i++) { r -= w[i]; if (r <= 0) return have[i].key; }
+    return have[have.length - 1].key;
   }
 
   _moveTo(p, tx, tz, spd, dt, reach = 0.55) {
@@ -1175,6 +1194,7 @@ export function soakRun(seed, opts = {}) {
   // rhythm. A route driver's stops are not on a metronome.
   let guard = 0, lastT = -1, stopT = 0, stuckT = 0, sinceStop = 999, commit = null, churned = false;
   let wantKey = null, wantFor = -1;
+  const pricedInv = {};
   // ⚠️ SMALL — just enough to clear the spot you're standing in. It is the AHEAD filter,
   // not this distance, that stops the bot shuffling in place. At 22-48 m the truck drove
   // past everyone who came out WHILE IT WAS PARKED (they are behind it by the time it
@@ -1292,6 +1312,16 @@ export function soakRun(seed, opts = {}) {
       if (!leaving && g.crew.seated) act('interact');     // get out of the seat and go to work
 
       if (P.churn && !churned && !g.churning) { act('churn', P.churn); churned = true; }
+      // ⚠️ price the invention the way the bay's own readout says to: a novel flavour
+      // carries headroom over the street ceiling, and a bot that ignores it measures a
+      // player who can't read their own clipboard. 0.7x keeps it inside willBuy on the
+      // cheapest block the route serves.
+      for (const f of g.invented) {
+        if (f.stats && !pricedInv[f.key] && (g.stock[f.key] || 0) > 0) {
+          pricedInv[f.key] = 1;
+          act('price', { key: f.key, cents: f.price + Math.round(D.ceilingBonus(f.stats) * 0.7) });
+        }
+      }
       // the churn runs in parallel now — only the CLEAN keeps the window shut
       if (!g.cleaning && !wantsClean && !g.windowOpen) act('window', true);
       // The law says silence the instant you're stationary — but every stop is a gamble:

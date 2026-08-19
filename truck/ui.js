@@ -89,6 +89,13 @@ export class UI {
 
       <h3>what you'd be making</h3>
       <div class="fname">${D.flavourName(r)}${s.legend ? ' <em>— one of cy\'s</em>' : ''}</div>
+      <div class="note" style="margin:-.3rem 0 .5rem">${(() => {
+        // aimed at whom? The SAME numbers the demand draw uses — aiming is mechanical now.
+        const k = D.kidAppeal(s), a = D.adultAppeal(s);
+        return k > a * 1.3 ? 'aimed at the kids — they will ask for this over the bars'
+          : a > k * 1.3 ? 'aimed at the grown-ups — soft-serve money without the machine'
+            : 'aimed at nobody in particular. everyone a little, no one especially.';
+      })()}</div>
       ${bar('sweet', s.sweet, 1.2, s.sweet > 0.85 ? 'the kids will lose their minds' : s.sweet > 0.5 ? 'sweet enough' : 'grown-up sweet')}
       ${bar('novel', s.novel, 1.2, s.novel > 0.85 ? "nobody's had this" : s.novel > 0.5 ? 'worth a second look' : 'familiar')}
       ${bar('holds', s.melt, 1.0, s.melt > 0.7 ? 'survives a warm box' : s.melt > 0.45 ? 'holds till teatime' : 'eat it now')}

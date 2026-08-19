@@ -467,6 +467,29 @@ if (c.hash === a.hash) bad(`seeds 999 and 1000 produced identical runs — the s
   }
 }
 {
+  // THE DEMAND SYSTEM (§10): kids' asks must skew to the kid items and adults' to the
+  // adult items, through the REAL come-out path. Uniform want-selection shipped for three
+  // milestones while the appeal stats decorated the data file — "recipes are aimed" was
+  // a lie the whole time, and only the bay's ~0% payback ever hinted at it.
+  const asks = { kid: {}, adult: {} };
+  for (let s = 71; s <= 76; s++) {
+    soakRun(s, {
+      cb: { cameOut: (p) => { if (p.want) { const b = asks[p.kid ? 'kid' : 'adult']; b[p.want] = (b[p.want] || 0) + 1; } } },
+    });
+  }
+  const share = (bag, keys) => {
+    let hit = 0, all = 0;
+    for (const [k, n] of Object.entries(bag)) { all += n; if (keys.includes(k)) hit += n; }
+    return all ? hit / all : 0;
+  };
+  const kidShare = share(asks.kid, ['eyes', 'bomb', 'pop']);
+  const adultShare = share(asks.adult, ['cone', 'scoop']);
+  console.log(`the demand:      kids ask for bars/pops ${(kidShare * 100).toFixed(0)}% of the time · adults ask for cones/scoops ${(adultShare * 100).toFixed(0)}%`);
+  if (kidShare < 0.6) bad(`kid demand barely skews to kid items (${(kidShare * 100).toFixed(0)}%) — the weighted draw is not biting`);
+  if (adultShare < 0.6) bad(`adult demand barely skews to adult items (${(adultShare * 100).toFixed(0)}%)`);
+  if (Object.keys(asks.kid).length < 3) bad('kids only ever ask for one or two things — the tail died');
+}
+{
   // per-item melt: a tough bar must outlast a soft one as the box warms
   const tough = D.softBelow(0.85), weak = D.softBelow(0.30);
   console.log(`melt:            a 0.85-melt item softens at cold ${tough.toFixed(3)}, a 0.30-melt at ${weak.toFixed(3)}`);
