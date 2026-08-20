@@ -60,6 +60,10 @@ button{font-family:var(--ui-serif);cursor:pointer;border:0}
 #songlamp.on .dot{background:var(--pink);box-shadow:0 0 10px var(--pink)}
 #prompt{position:absolute;left:50%;bottom:5.2rem;transform:translateX(-50%);
   font-size:.94rem;text-align:center;white-space:nowrap}
+/* the standing order — sits above the prompt, in the pencil red, always readable */
+#order{position:absolute;left:50%;bottom:7.6rem;transform:translateX(-50%);
+  font-size:1.02rem;text-align:center;max-width:44rem;color:var(--pencil);
+  border-left:4px solid var(--pencil)}
 #mirrorwarn{position:absolute;left:50%;bottom:9.6rem;transform:translateX(-50%);
   font-size:1rem;background:rgba(192,57,43,.92);color:#fff;padding:.5rem 1rem;border-radius:3px}
 #hint{position:absolute;left:50%;top:3.6rem;transform:translateX(-50%);max-width:36rem;
@@ -184,6 +188,7 @@ button{font-family:var(--ui-serif);cursor:pointer;border:0}
     <div class="big-n" id="drawertxt">$0.00</div>
     <div class="sub" id="drawersub">in the drawer</div>
   </div>
+  <div id="order" class="card hide"></div>
   <div id="prompt" class="card hide"></div>
   <div id="mirrorwarn" class="hide">check your mirror</div>
   <div id="hint"><span class="card" id="hinttxt"></span></div>

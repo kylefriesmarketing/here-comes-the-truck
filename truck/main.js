@@ -320,6 +320,16 @@ function draw(dtWall) {
   }
   ui.setPrompt(pr);
 
+  // ⚠️ THE ORDER FOLLOWS YOU. You are always across the truck at a bin at the moment you
+  // need to remember what they asked for, and the window panel is behind you then. This
+  // one line stays up the whole time somebody is waiting, wherever you are standing.
+  const sv = G.serving;
+  ui.setOrder(sv && sv.stage === 'ask'
+    ? (G.crew.hands
+      ? `carrying ${G.labelOf(G.crew.hands)} · they wanted ${sv.tell || sv.said}`
+      : `they want: ${sv.tell || sv.said}`)
+    : '');
+
   renderer.render(view.scene, camera);
 }
 
@@ -406,9 +416,12 @@ window.__hct = {
    *  a default camera sitting at the world origin, at ground level, looking down -Z.
    *  (It renders as houses either side of a thin dark line with sky above AND below,
    *  which reads convincingly as "the camera is upside down". It isn't.) */
+  // ⚠️ It must run the WHOLE of draw(), UI included. It used to do camera + scene only,
+  // so every headless check of a prompt or an order line read a HUD that had never been
+  // updated — the panel looked broken while the game was fine. A debug render path that
+  // is not the real render path verifies nothing.
   renderOnce(dt = 0.016) {
-    placeCamera(dt); wall += dt; view.frame(G, dt, wall);
-    renderer.render(view.scene, camera);
+    draw(dt);
     return 'rendered';
   },
   state() {

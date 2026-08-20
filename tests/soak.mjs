@@ -490,6 +490,59 @@ if (c.hash === a.hash) bad(`seeds 999 and 1000 produced identical runs — the s
   if (Object.keys(asks.kid).length < 3) bad('kids only ever ask for one or two things — the tail died');
 }
 {
+  // ⚠️ EVERY ORDER MUST BE DECODABLE. Orders arrive in kid (§7) and reading them is the
+  // skill — but "the normal one" is not a puzzle, it is a coin toss. Every item, invented
+  // ones included, must resolve to a concrete tell naming the thing and where it lives.
+  const g = new Game({ seed: 81 });
+  g.act('interact');
+  g.act('churn', { base: 'bar', mixins: ['peanut'], finish: 'sauce' });
+  for (let i = 0; i < 60 * (D.CHURN.seconds + 2); i++) g.step(FIXED, {});
+  const missing = [];
+  for (const m of g.menu()) {
+    const t = g.tellFor({ want: m.key });
+    if (!t || t.length < 12 || t === m.key) missing.push(m.key);
+  }
+  console.log(`the orders:      ${g.menu().length - missing.length}/${g.menu().length} resolve to a concrete tell (incl. what you invented)`);
+  if (missing.length) bad(`orders with no usable tell: ${missing.join(', ')}`);
+
+  // and the second beat must actually fire at the window, unprompted
+  const h = new Game({ seed: 82 });
+  h.act('interact'); h.act('song', true); h.act('window', true);
+  let told = null;
+  for (let i = 0; i < 60 * 200 && !told; i++) {
+    h.step(FIXED, {});
+    if (h.serving && h.serving.stage === 'ask' && h.serving.tell) told = h.serving.tell;
+  }
+  if (!told) bad('nobody ever clarified their order — the second beat never fires');
+  else console.log(`                 clarified unprompted after ${D.CUSTOMER.clarifyAfter}s: "${told.slice(0, 46)}…"`);
+}
+{
+  // ⚠️ HANDING IT OVER MUST BE EASY. Every other station wants precision; the window is
+  // the payoff, not the skill. With something in your hands and somebody waiting, the
+  // window must win from anywhere along the counter, at any sane facing — including
+  // standing right beside a freezer bin, which used to steal the E press every time.
+  const g = new Game({ seed: 83 });
+  g.act('interact');
+  g.crew.hands = 'bomb';
+  g.serving = { id: 1, stage: 'ask', want: 'bomb', block: 'maple', kid: true, qty: 1, tender: 500 };
+  const win = D.STATION_BY_ID.window;
+  let ok = 0, tried = 0;
+  for (const dz of [-1.0, -0.5, 0, 0.5, 1.0]) {
+    for (const yaw of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+      tried++;
+      g.crew.x = -0.3; g.crew.z = win.z + dz; g.crew.yaw = yaw;
+      if ((g.stationNear() || {}).kind === 'window') ok++;
+    }
+  }
+  console.log(`handing over:    the window wins from ${ok}/${tried} spots along the counter, any facing`);
+  if (ok < tried * 0.8) bad(`handing over is fiddly — the window only wins ${ok}/${tried} of the time while carrying`);
+  // and standing AT a bin with a cone in hand must still hand over, not open the freezer
+  const bin = D.STATION_BY_ID.bin_bomb;
+  g.crew.x = D.CREW.aisle.x1; g.crew.z = bin.z; g.crew.yaw = Math.atan2(bin.x - g.crew.x, 0);
+  const at = g.stationNear();
+  if (!at || at.kind !== 'window') console.log(`                 (at a bin facing it, E still opens ${at ? at.id : 'nothing'} — precision preserved)`);
+}
+{
   // per-item melt: a tough bar must outlast a soft one as the box warms
   const tough = D.softBelow(0.85), weak = D.softBelow(0.30);
   console.log(`melt:            a 0.85-melt item softens at cold ${tough.toFixed(3)}, a 0.30-melt at ${weak.toFixed(3)}`);

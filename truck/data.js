@@ -182,6 +182,7 @@ export const CUSTOMER = {
   // never delivered "three kids come running." Kids will absolutely walk half a block.
   willWalk: 34,
   maxQueue: 5,
+  clarifyAfter: 2.4,        // seconds at the window before they add the concrete tell
   kidChance: 0.68,          // 2 in 3 of the people who come out are children
 };
 
@@ -225,6 +226,20 @@ export const ADULT_ORDERS = {
   cone:  ['a cone. soft serve.', 'a twist cone, please'],
   pop:   ['a freeze pop'],
 };
+// ⚠️ THE SECOND BEAT. Orders arrive in kid (§7) and reading them is the skill — but a
+// skill has to be LEARNABLE, and "the normal one" is not a puzzle, it is a coin toss.
+// So every order has two beats: the mumble, then, if you take a moment or hand over the
+// wrong thing, a TELL that names the object and where it lives in your truck. Experts act
+// on beat one. Everyone else waits two seconds and learns the layout. Nobody is stuck.
+export const TELLS = {
+  eyes: "the bar with the gumball eyes — front bin, by the cab",
+  bomb: "red white and blue, on a stick — the middle bin",
+  pop: "the long skinny tube one — the bin nearest the window",
+  scoop: "a scoop in a cup — out of the tub down the side",
+  cone: "out of the machine, the swirly one — back by the window",
+};
+export const TELL_INVENTED = (name) => `the one you made — “${name}” — out of the tub at the back`;
+
 // What they call something you invented this afternoon. They have no name for it yet.
 export const INVENTED_ORDERS = {
   kid: ['the new one', 'the one you made', 'whatever that one is', 'that one. the one there.'],
@@ -329,7 +344,13 @@ export const STATIONS = [
   { id: 'bin_pop', label: 'the freeze pops', verb: 'take one', x: 0.68, z: -0.15, kind: 'take', item: 'pop' },
 
   // THE WINDOW — on the kerb side, mid-truck, between the two ends you run between.
-  { id: 'window', label: 'the window', verb: 'hand it over', x: -0.68, z: -0.10, kind: 'window' },
+  // ⚠️ DELIBERATELY GENEROUS. Every other station wants you standing at it precisely,
+  // because knowing your own truck is the skill. Handing a cone across a counter is NOT
+  // the skill — it is the payoff, and fumbling it is just friction. `reach` covers the
+  // whole counter run and `facing` is negative, i.e. you can hand it over with your back
+  // half-turned, mid-stride, the way you actually would.
+  { id: 'window', label: 'the window', verb: 'hand it over', x: -0.68, z: -0.10, kind: 'window',
+    reach: 1.75, facing: -0.25 },
 
   // the scoop tub, further back down the left wall
   { id: 'tub_scoop', label: 'the tub', verb: 'scoop one', x: 0.68, z: -0.90, kind: 'take', item: 'scoop' },

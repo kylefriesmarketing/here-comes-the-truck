@@ -8,6 +8,26 @@
 
 ---
 
+## Status — M8, orders you can read · 2026-08-18
+
+**Kyle's playtest: "customers need to be more specific, and it needs to be easier to hand
+it over."** Both were real.
+
+**Orders are two beats now.** They still arrive in kid — §7's mumble is intact — but after
+2.4 s at the window (or the instant you hand over the wrong thing) they add a **TELL**
+that names the object and where it lives in your truck: *"red white and blue, on a stick —
+the middle bin."* Experts act on beat one; everyone else waits two seconds and learns the
+layout. Reading orders stays the skill; guessing blind was never a skill. The **standing
+order line** follows you anywhere in the truck, because you are always across the aisle at
+a bin when you need to remember what they asked for.
+
+**Handing over is generous now.** Every other station wants you standing at it precisely,
+because knowing your truck IS the skill — but handing a cone across a counter is the
+payoff, not the skill. The window has its own reach (1.75 m, the whole counter run) and
+**ignores facing entirely while you're carrying** with somebody waiting. Measured
+**9 of 20** sane spots failed before; now **20/20**, at any facing, including standing
+right at a freezer bin — which used to steal the E press every single time.
+
 ## Status — M7, the demand system · 2026-08-18
 
 **"Recipes aren't better or worse — they're aimed" (§10) is mechanical now.** What a
@@ -423,6 +443,15 @@ Kept because a green test suite is not a working game, and three of these ran fu
     stays blocking because being elbow-deep IS the chore.
 56. **Test the failure path of the failure path**: the machine test only worked once its
     kicks matched sim reality — and that mismatch is precisely what surfaced trap 51.
+58. **A facing `continue` happens before any score bonus can rescue it.** The window had a
+    +1.5 tie-breaker for handing over that could never fire, because the facing gate had
+    already skipped the station. Gates run before scores — check the order.
+59. **"Reading them is the skill" needs the order to be READABLE.** "the normal one" is a
+    coin toss, not a puzzle. Vagueness is charm on beat one and cruelty as the only beat.
+60. **A debug render path that isn't the real render path verifies nothing.**
+    `__hct.renderOnce()` drew camera + scene but skipped the UI half of `draw()`, so every
+    headless check of a prompt or order line read a HUD that had never updated — the panel
+    looked broken while the game was fine. It calls `draw()` now.
 57. **A data field read by nothing makes its promise a lie.** The `kid`/`adult` appeal
     stats shipped on every item for three milestones while want-selection stayed uniform
     — "recipes are aimed" was decoration, and only the bay's ~0% payback hinted at it.

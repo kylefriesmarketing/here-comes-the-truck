@@ -205,10 +205,18 @@ export class Game {
     for (const s of D.STATIONS) {
       const dx = s.x - cr.x, dz = s.z - cr.z;
       const d = Math.hypot(dx, dz);
-      if (d > D.CREW.reach) continue;
+      // ⚠️ per-station overrides: the window is forgiving, the bins are not
+      if (d > (s.reach ?? D.CREW.reach)) continue;
       const facing = d < 0.05 ? 1 : (dx * fs + dz * fc) / d;   // cos of the angle to it
-      if (facing < D.CREW.facing) continue;                    // it's behind you
-      const score = facing - d * 0.35;                         // prefer what you're looking at
+      // ⚠️ HANDING OVER IGNORES FACING ENTIRELY. With something in your hands and
+      // somebody at the window, you can pass it across without turning to look — which is
+      // what a person does. Gating on facing failed from 9 of 20 sane spots along the
+      // counter (a facing `continue` happens BEFORE any score bonus can rescue it), and
+      // that fumble is pure friction: handing it over is the payoff, not the skill.
+      const handing = s.kind === 'window' && cr.hands && this.serving;
+      if (!handing && facing < (s.facing ?? D.CREW.facing)) continue;   // it's behind you
+      let score = facing - d * 0.35;
+      if (handing) score += 3;                                  // and it beats the bin beside you
       if (score > bestScore) { bestScore = score; best = s; }
     }
     return best;
@@ -524,6 +532,13 @@ export class Game {
         this._moveTo(p, s.x, s.z, spd * 0.7, dt, C.reachWindow);
         // only whoever is at the front of the line is actually at your window
         if (!this.serving && (p.slot || 0) === 0) { this.serving = p; p.t = 0; this.cb.atWindow && this.cb.atWindow(p); }
+        // ⚠️ THE SECOND BEAT: after a moment at the window they stop mumbling and tell
+        // you what it actually is. This is what makes "orders arrive in kid" a skill you
+        // can learn rather than a guess you can only lose.
+        if (this.serving === p && !p.tell && p.stage === 'ask' && p.t > C.clarifyAfter) {
+          p.tell = this.tellFor(p);
+          this.cb.clarify && this.cb.clarify(p);
+        }
         if (p.t > pat) {
           if (this.serving === p) this.serving = null;
           p.state = 'leaving'; this.stats.walkedOff++;
@@ -801,6 +816,13 @@ export class Game {
 
   labelOf(key) { const it = this.itemOf(key); return it ? it.label : key; }
 
+  /** The concrete clarification for what this person actually wants. */
+  tellFor(p) {
+    if (!p || !p.want) return "…something you haven't got. they'll settle for anything.";
+    const it = this.itemOf(p.want);
+    return D.TELLS[p.want] || (it ? D.TELL_INVENTED(it.label) : p.want);
+  }
+
   /** Which station in the truck gives you this item. The UI's hint and the bot both read it. */
   stationFor(key) {
     const s = D.STATIONS.find(x => x.item === key);
@@ -826,8 +848,11 @@ export class Game {
     if (key !== p.want) {
       p.wrongs = (p.wrongs || 0) + 1;
       this.stats.wrong++;
+      // handing over the wrong thing buys you the tell immediately — the mistake IS how
+      // you learn, which is the whole reason getting it wrong has to stay cheap
+      if (!p.tell) p.tell = this.tellFor(p);
       this.cb.wrong && this.cb.wrong(p, key);
-      if (p.wrongs < 2) return { ok: false, msg: 'no — the OTHER one', wrong: true };
+      if (p.wrongs < 2) return { ok: false, msg: 'no — ' + p.tell, wrong: true, tell: p.tell };
       // second time, they just take it. Kids do.
     }
 
@@ -1335,6 +1360,10 @@ export function soakRun(seed, opts = {}) {
           wantFor = p.id;
           wantKey = (p.want && (alwaysRight || brng() > 0.22)) ? p.want : bpick(g.menu()).key;
         }
+        // ⚠️ once they've said the tell, the bot stops guessing — same as a player. A bot
+        // that kept guessing through the clarification would measure a game where the
+        // second beat does nothing, which is exactly the thing being tested.
+        if (p.tell && wantKey !== p.want) { wantKey = p.want; }
         if (p.stage === 'ask') {
           if (g.crew.hands !== wantKey) {
             if (g.crew.hands) act('drop');

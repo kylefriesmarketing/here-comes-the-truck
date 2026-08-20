@@ -163,6 +163,13 @@ export class UI {
     if (text) p.textContent = text;
   }
 
+  /** The standing order line — visible wherever you are while somebody is waiting. */
+  setOrder(text) {
+    const o = $('order');
+    show(o, !!text);
+    if (text) o.textContent = text;
+  }
+
   // ---- the window -----------------------------------------------------------
   serve(g) {
     const p = g.serving;
@@ -179,7 +186,9 @@ export class UI {
       // they asked for: walk to the bin, take it, walk back. The panel only carries the
       // order and the face, because those are things you read, not things you press.
       show($('pay'), false); show($('menu'), false);
-      $('said').textContent = '“' + p.said + '”';
+      // ⚠️ the tell REPLACES the mumble once they've said it — leaving both up made the
+      // panel two lines of competing text and you read neither under pressure
+      $('said').textContent = p.tell ? '“' + p.tell + '”' : '“' + p.said + '”';
       // ⚠️ THEY KNOW YOUR NAME, so you get to know theirs. A regular is never "a kid".
       $('whosaid').textContent = (p.who || (p.kid ? 'a kid' : 'a grown-up')) +
         (p.qty > 1 ? ' · two of them, the same as always' : '') +
